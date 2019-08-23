@@ -1,0 +1,33 @@
+Package: CERMBlidarpostgis
+Type: Package
+Title: Store and retrieve processed LIDAR data from a PostGIS database
+Version: 0.1.0
+Date: 2019-08-23
+Authors@R: c(
+  person("Meaghan", "Jenkins", role = "aut", email = "mjenkins@uow.edu.au"),
+  person("Michael", "Bedward", role = c("aut", "cre"), email = "michael.bedward@gmail.com")
+  )
+Description: This package extends the CERMBlidar package with functions to store
+  and retrieve rasters of vegetation structure and associated data in/from a 
+  PostGIS database. Written for the Centre for Environmental Risk Management of
+  Bushfires, University of Wollongong (UOW), Australia. Most functions are 
+  wrappers around those in the lidR package. The package may be freely used by 
+  anyone, but please note that: (1) Some functions are particular to data 
+  conventions used by New South Wales State Government and UOW and might not be
+  suitable for general use; (2) The package is at an early stage of development 
+  and features are likely to change without notice between successive 0.x 
+  versions.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1
+Suggests: 
+    testthat (>= 2.1.0)
+Depends: R (>= 3.5.0),
+  lidR (>= 2.0.2),
+  raster
+Imports:
+  CERMBlidar,
+  glue,
+  stringr
+VignetteBuilder: knitr
