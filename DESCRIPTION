@@ -8,16 +8,15 @@ Authors@R: c(
   person("Michael", "Bedward", role = c("aut", "cre"), email = "michael.bedward@gmail.com")
   )
 Description: This package extends the CERMBlidar package with functions to store
-  and retrieve rasters of vegetation structure and associated data in/from a 
-  PostGIS database. Written for the Centre for Environmental Risk Management of
-  Bushfires, University of Wollongong (UOW), Australia. Most functions are 
-  wrappers around those in the lidR package. The package may be freely used by 
+  and retrieve data derived from LIDAR images to a PostGIS database. It is being
+  developed for the Centre for Environmental Risk Management of Bushfires, 
+  University of Wollongong (UOW), Australia. The package may be freely used by 
   anyone, but please note that: (1) Some functions are particular to data 
   conventions used by New South Wales State Government and UOW and might not be
   suitable for general use; (2) The package is at an early stage of development 
   and features are likely to change without notice between successive 0.x 
   versions.
-License: MIT + file LICENSE
+License: GPL-2 + file LICENSE
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 6.1.1
@@ -28,6 +27,9 @@ Depends: R (>= 3.5.0),
   raster
 Imports:
   CERMBlidar,
+  dplyr,
   glue,
+  magrittr,
+  sf,
   stringr
 VignetteBuilder: knitr

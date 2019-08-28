@@ -4,8 +4,42 @@
 \alias{pg_load_raster}
 \title{Import a raster into the database}
 \usage{
-pg_load_raster(r, epsg, dbname, schema, tbl, replace = FALSE,
-  tilew = 50, username = "postgres")
+pg_load_raster(r, epsg, dbname, tablename, replace = FALSE,
+  tilew = NULL, tileh = NULL, flags = "-M -Y",
+  username = "postgres")
+}
+\arguments{
+\item{r}{The raster to import.}
+
+\item{epsg}{EPSG code for the raster projection.}
+
+\item{dbname}{The name of an existing PostgreSQL / Postgis database
+(e.g. \code{'cermb_lidar'}).}
+
+\item{tablename}{Name of the raster table in the form \code{'schema.tablename'}.}
+
+\item{replace}{If \code{TRUE} and the table exists, it will be dropped and
+recreated. If \code{FALSE} (default) the data will be appended to an
+existing table if present, otherwise a new table will be created.}
+
+\item{tilew}{Width (pixels) of raster tiles as stored in the database
+table. Refer to PostGIS documentation for an explanation. If \code{NULL}
+(default) this will be set to the width of the input raster.}
+
+\item{tileh}{height (pixels) of raster tiles as stored in the database
+table. Refer to PostGIS documentation for an explanation. If \code{NULL}
+(default) this will be set to the height of the input raster.}
+
+\item{flags}{Other options to be passed to the PostgreSQL raster2pgsql
+program. Default is \code{"-M -Y"} to run vacuum analyzed (-M) and
+use COPY instead of INSERT statements for speed (-Y). See
+raster2pgsql documentation for details of other options.}
+
+\item{username}{Name of the user (default: 'postgres').}
+
+\item{label}{A label to use to construct a file name for writing the raster
+to disk prior to import. This will be stored in the 'filename' column of
+the raster table.}
 }
 \description{
 Import a raster into the database

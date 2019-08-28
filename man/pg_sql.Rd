@@ -15,14 +15,18 @@ required if the \code{file} argument is used to read commands from a file.}
 \item{file}{The path and name of a file containing the SQL command(s) to
 run. Ignored if \code{command} is provided.}
 
-\item{dbname}{Name of an existing database to run the command against, or an
-empty string \code{""} for commands such as \code{'CREATE DATABASE foo;'}.}
+\item{dbname}{The name of an existing PostgreSQL / Postgis database (e.g.
+\code{'cermb_lidar'}). Can also be an empty string for general commands
+such as \code{'CREATE DATABASE foo;'}.}
 
 \item{username}{Name of the user (default: 'postgres').}
 
 \item{quiet}{If \code{TRUE} the output from the psql helper application is
 returned invisibly; if \code{FALSE} (default) the output is returned
 explicitly.}
+}
+\value{
+Text of the database status message after running the command.
 }
 \description{
 This function allows you to run arbitrary SQL commands on a selected database

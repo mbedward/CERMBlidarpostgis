@@ -4,14 +4,13 @@
 \alias{pg_table_exists}
 \title{Check if a table exists in the given database}
 \usage{
-pg_table_exists(dbname, schema, tbl, username = "postgres")
+pg_table_exists(dbname, tablename, username = "postgres")
 }
 \arguments{
-\item{dbname}{Name of an existing database within the PostgreSQL server.}
+\item{dbname}{The name of an existing PostgreSQL / Postgis database
+(e.g. \code{'cermb_lidar'}).}
 
-\item{schema}{Name of the schema containing the table.}
-
-\item{tbl}{Name of the table.}
+\item{tablename}{Name of the table.}
 
 \item{username}{Name of the user (default: 'postgres').}
 }
