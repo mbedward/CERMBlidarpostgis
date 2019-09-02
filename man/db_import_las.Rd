@@ -4,8 +4,7 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(las.path, dbname,
-  counts.tablename = "rasters.point_counts",
+db_import_las(las.path, dbname, counts.tablename = "rasters.tmp_load",
   metadata.tablename = "vectors.las_metadata", epsg.code = 3308)
 }
 \arguments{
@@ -18,7 +17,7 @@ file.}
 
 \item{counts.tablename}{The name of the table in which to store the raster of
 point counts within vertical layers. Should be in the form
-\code{'schema.table'}. Defaults to \code{'rasters.point_counts'}.}
+\code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.}
 
 \item{metadata.tablename}{The name of the table in which to store the summary
 data and bounding polygon for the LAS image. Should be in the form

@@ -211,7 +211,7 @@ db_create_metadata_table <- function(dbname,
 #'
 #' @param counts.tablename The name of the table in which to store the raster of
 #'   point counts within vertical layers. Should be in the form
-#'   \code{'schema.table'}. Defaults to \code{'rasters.point_counts'}.
+#'   \code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.
 #'
 #' @param metadata.tablename The name of the table in which to store the summary
 #'   data and bounding polygon for the LAS image. Should be in the form
@@ -226,7 +226,7 @@ db_create_metadata_table <- function(dbname,
 #'
 db_import_las <- function(las.path,
                           dbname,
-                          counts.tablename = "rasters.point_counts",
+                          counts.tablename = "rasters.tmp_load",
                           metadata.tablename = "vectors.las_metadata",
                           epsg.code = 3308) {
 
@@ -238,11 +238,6 @@ db_import_las <- function(las.path,
     reproject_tile(epsg.code) %>%
     remove_flightline_overlap()
 
-  message("Importing metadata")
-  db_load_tile_metadata(las, fname,
-                        dbname = DB,
-                        tablename = metadata.tablename)
-
   message("Importing point counts for strata")
   counts <- get_stratum_counts(las, StrataCERMB)
 
@@ -251,6 +246,16 @@ db_import_las <- function(las.path,
                  tablename = counts.tablename,
                  tilew = ncol(counts),
                  tileh = nrow(counts))
+
+  message("Merging new and existing rasters")
+
+  pg_sql(command = CERMBlidarpostgis::SQL_MergeImportRaster,
+         dbname = dbname)
+
+  message("Importing LAS metadata")
+  db_load_tile_metadata(las, fname,
+                        dbname = DB,
+                        tablename = metadata.tablename)
 }
 
 
