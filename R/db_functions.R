@@ -253,7 +253,7 @@ db_import_las <- function(las.path,
          dbname = dbname)
 
   message("Importing LAS metadata")
-  db_load_tile_metadata(las, fname,
+  db_load_tile_metadata(las, las.path,
                         dbname = DB,
                         tablename = metadata.tablename)
 }
