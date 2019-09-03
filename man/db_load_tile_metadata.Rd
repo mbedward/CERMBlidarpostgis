@@ -4,20 +4,17 @@
 \alias{db_load_tile_metadata}
 \title{Import LAS tile metadata into the database}
 \usage{
-db_load_tile_metadata(las, filename, dbname, tablename,
-  username = "postgres")
+db_load_tile_metadata(las, filename, dbsettings, tablename)
 }
 \arguments{
 \item{las}{A LAS object.}
 
 \item{filename}{Path or filename from which the LAS object was read.}
 
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
 \item{tablename}{Name of the raster table in the form \code{'schema.tablename'}.}
-
-\item{username}{Name of the user (default: 'postgres').}
 }
 \description{
 Import LAS tile metadata into the database

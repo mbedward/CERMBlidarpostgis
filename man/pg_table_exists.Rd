@@ -4,26 +4,24 @@
 \alias{pg_table_exists}
 \title{Check if a table exists in the given database}
 \usage{
-pg_table_exists(dbname, tablename, username = "postgres")
+pg_table_exists(dbsettings, tablename)
 }
 \arguments{
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
-\item{tablename}{Name of the table.}
-
-\item{username}{Name of the user (default: 'postgres').}
+\item{tablename}{Name of the table in the form \code{schema.tablename}.}
 }
 \value{
 \code{TRUE} if the table was found; \code{FALSE} otherwise.
 }
 \description{
-The check is done by using the \code{psql.exe} helper program to retrieve
-metadata for the table, and checking that something was found.
+Check if a table exists in the given database
 }
 \examples{
 \dontrun{
-pg_table_exists("nsw_lidar", "postgis", "bega")
+dbsettings <- connect_to_database(...)
+pg_table_exists(dbsettings, "postgis.bega")
 }
 
 }

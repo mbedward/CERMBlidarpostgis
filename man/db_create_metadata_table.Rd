@@ -4,18 +4,15 @@
 \alias{db_create_metadata_table}
 \title{Create the LAS metadata table if it does not already exist}
 \usage{
-db_create_metadata_table(dbname, tablename = "vectors.las_metadata",
-  username = "postgres")
+db_create_metadata_table(dbsettings, tablename = "vectors.las_metadata")
 }
 \arguments{
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
 \item{tablename}{Name of the table to hold metadata and las tile bounding
 polygons in the form \code{'schema.tablename'}. Defaults to
 \code{'vectors.las_metadata'}.}
-
-\item{username}{Name of the user (default: 'postgres').}
 }
 \value{
 Invisibly returns a list with the following elements:

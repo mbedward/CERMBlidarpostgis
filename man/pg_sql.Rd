@@ -4,22 +4,18 @@
 \alias{pg_sql}
 \title{Run an SQL command on a selected database}
 \usage{
-pg_sql(command, file = NULL, dbname = "", username = "postgres",
-  quiet = TRUE)
+pg_sql(dbsettings, command = NULL, file = NULL, quiet = TRUE)
 }
 \arguments{
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
+
 \item{command}{A valid SQL command as a character string or \code{glue}
 object. Can also be a special \code{psql} command (see Details). Not
 required if the \code{file} argument is used to read commands from a file.}
 
 \item{file}{The path and name of a file containing the SQL command(s) to
 run. Ignored if \code{command} is provided.}
-
-\item{dbname}{The name of an existing PostgreSQL / Postgis database (e.g.
-\code{'cermb_lidar'}). Can also be an empty string for general commands
-such as \code{'CREATE DATABASE foo;'}.}
-
-\item{username}{Name of the user (default: 'postgres').}
 
 \item{quiet}{If \code{TRUE} the output from the psql helper application is
 returned invisibly; if \code{FALSE} (default) the output is returned
@@ -54,7 +50,9 @@ semi-colon. Note however that R will require the leading backslash to be
 # Must do this once at the start of an R session
 Sys.setenv(PGPASSWORD = "cermb")
 
-pg_sql("SELECT COUNT(*) AS NRECS FROM FOO;", dbname = "mydb")
+dbsettings <- connect_to_database("cermb_lidar")
+
+pg_sql(dbsettings, "SELECT COUNT(*) AS NRECS FROM FOO;")
 }
 
 }

@@ -4,12 +4,12 @@
 \alias{db_create_counts_table}
 \title{Create the point counts table if it does not already exist}
 \usage{
-db_create_counts_table(dbname, tablename = "rasters.point_counts",
+db_create_counts_table(dbsettings, tablename = "rasters.point_counts",
   username = "postgres")
 }
 \arguments{
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
 \item{tablename}{Name of the raster table to hold point counts in the form
 \code{'schema.tablename'}. Defaults to \code{'rasters.point_counts'}.}

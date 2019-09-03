@@ -19,18 +19,15 @@
 #' semi-colon. Note however that R will require the leading backslash to be
 #' 'escaped', e.g. \code{'\\dt'} otherwise obscure error messages will result.
 #'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
+#'
 #' @param command A valid SQL command as a character string or \code{glue}
 #'   object. Can also be a special \code{psql} command (see Details). Not
 #'   required if the \code{file} argument is used to read commands from a file.
 #'
 #' @param file The path and name of a file containing the SQL command(s) to
 #'   run. Ignored if \code{command} is provided.
-#'
-#' @param dbname The name of an existing PostgreSQL / Postgis database (e.g.
-#'   \code{'cermb_lidar'}). Can also be an empty string for general commands
-#'   such as \code{'CREATE DATABASE foo;'}.
-#'
-#' @param username Name of the user (default: 'postgres').
 #'
 #' @param quiet If \code{TRUE} the output from the psql helper application is
 #'   returned invisibly; if \code{FALSE} (default) the output is returned
@@ -43,19 +40,21 @@
 #' # Must do this once at the start of an R session
 #' Sys.setenv(PGPASSWORD = "cermb")
 #'
-#' pg_sql("SELECT COUNT(*) AS NRECS FROM FOO;", dbname = "mydb")
+#' dbsettings <- connect_to_database("cermb_lidar")
+#'
+#' pg_sql(dbsettings, "SELECT COUNT(*) AS NRECS FROM FOO;")
 #' }
 #'
 #' @export
 #'
-pg_sql <- function(command, file = NULL, dbname = "",
-                   username = "postgres", quiet = TRUE) {
+pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 
-  PSQL <- .get_runtime_setting("PSQL")
-  if (is.null(PSQL))
-    stop("Runtime settings not ready. Have you called check_postgis()?")
+  PSQL <- .settings_get_psql(dbsettings)
+  dbname <- .settings_get_dbname(dbsettings)
+  username <- .settings_get_username(dbsettings)
 
   command <- .parse_command(command)
+
   if (!is.null(command)) {
     fsql <- tempfile(pattern = "sql", fileext = ".sql")
     cat(command, file = fsql)
@@ -64,8 +63,7 @@ pg_sql <- function(command, file = NULL, dbname = "",
     fsql <- file
   }
 
-  dbarg <- ifelse(dbname == "", "", glue::glue('-d {dbname}'))
-  args <- glue::glue('{dbarg} -U {username} -f {fsql}')
+  args <- glue::glue('-d {dbname} -U {username} -f {fsql}')
   out <- system2(command = PSQL, args = args, stdout = TRUE)
 
   unlink(fsql)
@@ -107,8 +105,8 @@ pg_sql <- function(command, file = NULL, dbname = "",
 #' the tiles in the database may initially correspond to individual LAS files,
 #' this can change if rasters are re-tiled or unioned to optimize queries.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the raster table to hold point counts in the form
 #'   \code{'schema.tablename'}. Defaults to \code{'rasters.point_counts'}.
@@ -124,7 +122,7 @@ pg_sql <- function(command, file = NULL, dbname = "",
 #'
 #' @export
 #'
-db_create_counts_table <- function(dbname,
+db_create_counts_table <- function(dbsettings,
                                    tablename = "rasters.point_counts",
                                    username = "postgres") {
 
@@ -132,7 +130,7 @@ db_create_counts_table <- function(dbname,
                       {tablename} \\
                       (rid serial primary key, rast raster);")
 
-  out <- pg_sql(command, dbname = dbname, username = username)
+  out <- pg_sql(dbsettings, command)
 
   status <-
     if (any(stringr::str_detect(out, "ERROR"))) -1
@@ -150,14 +148,12 @@ db_create_counts_table <- function(dbname,
 #' counts and average point density. The table also has a geometry column for
 #' the bounding rectangle of each LAS image.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the table to hold metadata and las tile bounding
 #'   polygons in the form \code{'schema.tablename'}. Defaults to
 #'   \code{'vectors.las_metadata'}.
-#'
-#' @param username Name of the user (default: 'postgres').
 #'
 #' @return Invisibly returns a list with the following elements:
 #'   \describe{
@@ -168,9 +164,8 @@ db_create_counts_table <- function(dbname,
 #'
 #' @export
 #'
-db_create_metadata_table <- function(dbname,
-                                     tablename = "vectors.las_metadata",
-                                     username = "postgres") {
+db_create_metadata_table <- function(dbsettings,
+                                     tablename = "vectors.las_metadata") {
   command <- glue::glue(
     "CREATE TABLE IF NOT EXISTS \\
     {tablename} (\\
@@ -189,7 +184,7 @@ db_create_metadata_table <- function(dbname,
     nflightlines integer NOT NULL, \\
     bounds geometry(Polygon, 3308) NOT NULL);" )
 
-  out <- pg_sql(command, dbname = dbname, username = username)
+  out <- pg_sql(dbsettings, command)
 
   status <-
     if (any(stringr::str_detect(out, "ERROR"))) -1
@@ -206,8 +201,8 @@ db_create_metadata_table <- function(dbname,
 #'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param counts.tablename The name of the table in which to store the raster of
 #'   point counts within vertical layers. Should be in the form
@@ -225,7 +220,7 @@ db_create_metadata_table <- function(dbname,
 #' @export
 #'
 db_import_las <- function(las.path,
-                          dbname,
+                          dbsettings,
                           counts.tablename = "rasters.tmp_load",
                           metadata.tablename = "vectors.las_metadata",
                           epsg.code = 3308) {
@@ -241,21 +236,30 @@ db_import_las <- function(las.path,
   message("Importing point counts for strata")
   counts <- get_stratum_counts(las, StrataCERMB)
 
-  pg_load_raster(counts, epsg = 3308,
-                 dbname = dbname,
+  pg_load_raster(counts, epsg = epsg.code,
+                 dbsettings,
                  tablename = counts.tablename,
                  tilew = ncol(counts),
                  tileh = nrow(counts))
 
   message("Merging new and existing rasters")
-
-  pg_sql(command = CERMBlidarpostgis::SQL_MergeImportRaster,
-         dbname = dbname)
+  pg_sql(dbsettings, command = CERMBlidarpostgis::SQL_MergeImportRaster)
 
   message("Importing LAS metadata")
   db_load_tile_metadata(las, las.path,
-                        dbname = DB,
+                        dbsettings,
                         tablename = metadata.tablename)
+}
+
+
+#' Check if a LAS image has already been imported
+#'
+#' @export
+#'
+db_find_las <- function(las.path, dbsettings) {
+  stop("Sorry - not working yet")
+
+  fname <- .file_remove_extension( .file_from_path(las.path) )
 }
 
 
@@ -269,8 +273,8 @@ db_import_las <- function(las.path,
 #'
 #' @param epsg EPSG code for the raster projection.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the raster table in the form \code{'schema.tablename'}.
 #'
@@ -291,23 +295,21 @@ db_import_las <- function(las.path,
 #'   use COPY instead of INSERT statements for speed (-Y). See
 #'   raster2pgsql documentation for details of other options.
 #'
-#' @param username Name of the user (default: 'postgres').
-#'
 #' @export
 #'
 pg_load_raster <- function(r, epsg,
-                           dbname, tablename,
+                           dbsettings,
+                           tablename,
                            replace = FALSE,
                            tilew = NULL, tileh = NULL,
-                           flags = "-M -Y",
-                           username = "postgres") {
+                           flags = "-M -Y") {
 
-  PSQL <- .get_runtime_setting("PSQL")
-  R2P <- .get_runtime_setting("R2P")
-  if (is.null(PSQL) || is.null(R2P))
-    stop("Runtime settings not ready. Have you called check_postgis()?")
+  dbname <- .settings_get_dbname(dbsettings)
+  username <- .settings_get_username(dbsettings)
+  PSQL <- .settings_get_psql(dbsettings)
+  R2P <- .settings_get_r2p(dbsettings)
 
-  is.tbl <- pg_table_exists(dbname, tablename, username)
+  is.tbl <- pg_table_exists(dbsettings, tablename)
   if (replace) {
     in.mode <- "-d"
   } else if (is.tbl) {
@@ -345,41 +347,32 @@ pg_load_raster <- function(r, epsg,
 #'
 #' @param filename Path or filename from which the LAS object was read.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the raster table in the form \code{'schema.tablename'}.
-#'
-#' @param username Name of the user (default: 'postgres').
 #'
 #' @export
 #'
 db_load_tile_metadata <- function(las, filename,
-                                  dbname, tablename,
-                                  username = "postgres") {
+                                  dbsettings, tablename) {
 
-  PSQL <- .get_runtime_setting("PSQL")
-  R2P <- .get_runtime_setting("R2P")
-  if (is.null(PSQL) || is.null(R2P))
-    stop("Runtime settings not ready. Have you called check_postgis()?")
-
-  if (!pg_table_exists(dbname, tablename, username)) {
+  if (!pg_table_exists(dbsettings, tablename)) {
     msg <- glue::glue("Table {tablename} not found in database {dbname}")
     stop(msg)
   }
-
 
   epsgcode <- lidR::epsg(las)
 
   filename <- .file_from_path(filename)
   scantimes <- CERMBlidar::get_scan_times(las, by = "all")
 
-  pcounts <- get_point_counts(las)
+  pcounts <- CERMBlidar::get_class_frequencies(las)
   ptotal <- Reduce(sum, pcounts)
 
   nflightlines <- length(unique(las@data$flightlineID))
 
-  bounds <- get_las_bounds(las, "sf")
+  bounds <- CERMBlidar::get_las_bounds(las, "sf")
   wkt <- sf::st_as_text(bounds)
   area <- sf::st_area(bounds)
 
@@ -409,104 +402,37 @@ db_load_tile_metadata <- function(las, filename,
     ST_GeomFromText('{wkt}', {epsgcode}) );
     ")
 
-  pg_sql(command, dbname = dbname, username = username)
+  pg_sql(dbsettings, command)
 }
 
 
 #' Check if a table exists in the given database
 #'
-#' The check is done by using the \code{psql.exe} helper program to retrieve
-#' metadata for the table, and checking that something was found.
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
-#' @param dbname The name of an existing PostgreSQL / Postgis database
-#'   (e.g. \code{'cermb_lidar'}).
-#'
-#' @param tablename Name of the table.
-#'
-#' @param username Name of the user (default: 'postgres').
+#' @param tablename Name of the table in the form \code{schema.tablename}.
 #'
 #' @return \code{TRUE} if the table was found; \code{FALSE} otherwise.
 #'
 #' @examples
 #' \dontrun{
-#' pg_table_exists("nsw_lidar", "postgis", "bega")
+#' dbsettings <- connect_to_database(...)
+#' pg_table_exists(dbsettings, "postgis.bega")
 #' }
 #'
 #' @export
 #'
-pg_table_exists <- function(dbname, tablename, username = "postgres") {
-  command <- glue::glue('\\d {tablename}')
-  x <- pg_sql(command, dbname = dbname)
+pg_table_exists <- function(dbsettings, tablename) {
+  POOL <- .settings_get_pool(dbsettings)
 
-  ptn <- glue::glue('table.+{tablename}')
-  stringr::str_detect(tolower(x[1]), ptn)
-}
+  command <- glue::glue("select count(*) as n from {tablename};")
 
+  o <- options(warn = -1, show.error.messages = FALSE)
+  x <- try(pool::dbGetQuery(POOL, command))
+  options(o)
 
-#' Get counts for point classes
-#'
-#' Gets the number of points in classes: ground, veg, building, water, and
-#' other.
-#'
-#' @param las A LAS object.
-#'
-#' @return A named list of the count of points in each of the following
-#' classes: ground, veg, building, water, other.
-#'
-#' @export
-#'
-get_point_counts <- function(las) {
-  x <- table(las@data$Classification)
-  x <- data.frame(code = names(x), n = as.numeric(x), stringsAsFactors = FALSE)
-
-  x$class <- sapply(x$code, switch,
-                    '2' = "ground",
-                    '3' = "veg",
-                    '4' = "veg",
-                    '5' = "veg",
-                    '6' = "building",
-                    '9' = "water",
-                    "other")
-
-  x <- tapply(x$n, x$class, sum)
-
-  all.classes <- c("ground", "veg", "building", "water", "other")
-  to.add <- setdiff(all.classes, names(x))
-  n <- length(to.add)
-  if (n > 0) {
-    x2 <- integer(n)
-    names(x2) <- to.add
-    x <- c(x, x2)
-  }
-
-  as.list(x)
-}
-
-
-#' Get the bounding rectangle of a LAS tile
-#'
-#' This function constructs a polygon based on the minimum and maximum X and Y
-#' ordinates in the LAS data table, and returns it as either a WKT (Well Known
-#' Text) string specifier or an \code{sf} polygon object.
-#'
-#' @param las A LAS object.
-#'
-#' @param type Either \code{'wkt'} (default) to return a WKT text string or
-#'   \code{'sf'} to return a polygon object.
-#'
-#' @return The bounding polygon in the format specified by the \code{type}
-#'   argument.
-#'
-#' @export
-#'
-get_las_bounds <- function(las, type = c("wkt", "sf")) {
-  type <- match.arg(type)
-  outfn <- ifelse(type == "wkt", sf::st_as_text, base::identity)
-
-  xys <- c(range(las@data$X), range(las@data$Y))
-  ii <- c(1,3, 1,4, 2,4, 2,3, 1,3)
-  v <- matrix(xys[ii], ncol = 2, byrow = TRUE)
-  outfn( sf::st_polygon(list(v)) )
+  !is.null(x)
 }
 
 

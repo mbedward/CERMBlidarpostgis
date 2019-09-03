@@ -4,17 +4,16 @@
 \alias{pg_load_raster}
 \title{Import a raster into the database}
 \usage{
-pg_load_raster(r, epsg, dbname, tablename, replace = FALSE,
-  tilew = NULL, tileh = NULL, flags = "-M -Y",
-  username = "postgres")
+pg_load_raster(r, epsg, dbsettings, tablename, replace = FALSE,
+  tilew = NULL, tileh = NULL, flags = "-M -Y")
 }
 \arguments{
 \item{r}{The raster to import.}
 
 \item{epsg}{EPSG code for the raster projection.}
 
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
 \item{tablename}{Name of the raster table in the form \code{'schema.tablename'}.}
 
@@ -34,8 +33,6 @@ table. Refer to PostGIS documentation for an explanation. If \code{NULL}
 program. Default is \code{"-M -Y"} to run vacuum analyzed (-M) and
 use COPY instead of INSERT statements for speed (-Y). See
 raster2pgsql documentation for details of other options.}
-
-\item{username}{Name of the user (default: 'postgres').}
 
 \item{label}{A label to use to construct a file name for writing the raster
 to disk prior to import. This will be stored in the 'filename' column of

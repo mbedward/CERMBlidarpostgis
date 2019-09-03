@@ -4,7 +4,8 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(las.path, dbname, counts.tablename = "rasters.tmp_load",
+db_import_las(las.path, dbsettings,
+  counts.tablename = "rasters.tmp_load",
   metadata.tablename = "vectors.las_metadata", epsg.code = 3308)
 }
 \arguments{
@@ -12,8 +13,8 @@ db_import_las(las.path, dbname, counts.tablename = "rasters.tmp_load",
 an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 file.}
 
-\item{dbname}{The name of an existing PostgreSQL / Postgis database
-(e.g. \code{'cermb_lidar'}).}
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
 
 \item{counts.tablename}{The name of the table in which to store the raster of
 point counts within vertical layers. Should be in the form
