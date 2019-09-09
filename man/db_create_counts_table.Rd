@@ -2,7 +2,7 @@
 % Please edit documentation in R/db_functions.R
 \name{db_create_counts_table}
 \alias{db_create_counts_table}
-\title{Create the point counts table if it does not already exist}
+\title{Create the two point counts tables if they do not already exist}
 \usage{
 db_create_counts_table(dbsettings, tablename = "rasters.point_counts",
   username = "postgres")
@@ -11,25 +11,37 @@ db_create_counts_table(dbsettings, tablename = "rasters.point_counts",
 \item{dbsettings}{A named list of database connection settings returned
 by \code{\link{connect_to_database}}.}
 
-\item{tablename}{Name of the raster table to hold point counts in the form
-\code{'schema.tablename'}. Defaults to \code{'rasters.point_counts'}.}
+\item{tablename}{Name of the raster table to hold point counts for individual
+(not mosaiced) LAS images in the form \code{'schema.tablename'}. Defaults
+to \code{'rasters.point_counts'}. The table for mosaiced rasters will be
+given the same name plus the suffix \code{'_union'}.}
 
 \item{username}{Name of the user (default: 'postgres').}
 }
 \value{
 Invisibly returns a list with the following elements:
   \describe{
-    \item{status}{An integer code: 0 for success (as per \code{system});
+    \item{status}{A two-element integer vector with status codes for the
+      creation of each table: 0 for success (as per \code{system});
       1 for skipped (the table already existed); or -1 for error.}
-    \item{msg}{Message returned by the database.}
+    \item{msg}{A two-element list with the messages returned
+      by the database for each table.}
   }
 }
 \description{
-This function sets up a table to store multi-band rasters of integer point
-counts within voxels. The table has two columns: \code{rid}: an
-auto-incremented integer record number; \code{rast} raster tiles (aka chips)
-stored in binary format. There is no field explicitly linking raster records
-to records in other tables (e.g. the LAS metadata table) since, although
-the tiles in the database may initially correspond to individual LAS files,
-this can change if rasters are re-tiled or unioned to optimize queries.
+This function sets up two tables to store multi-band rasters of integer point
+counts within voxels. Each table has two columns: \code{rid}: an
+auto-incremented integer record number; \code{rast} raster tiles (i.e.
+PostGIS storage tiles rather than LAS images). The first of the two tables
+holds rasters derived from individual LAS images. The PostGIS tile size for
+each record corresponds to the dimensions of the input poinit counts raster.
+The second table, identified by the suffix \code{'_union'} holds rasters that
+have been mosaiced by summing the values of overlapping edge pixels.
+}
+\details{
+The reason for holding duplicate data is to allow for deletion and
+re-importing of data (e.g. to fix artefacts in a particular raster) that
+would otherwise be difficult with just the mosaiced data. There is no field
+explicitly linking raster records to records in other tables (e.g. the LAS
+metadata table). Such relationships are found via spatial queries.
 }

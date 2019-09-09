@@ -1,8 +1,8 @@
 Package: CERMBlidarpostgis
 Type: Package
 Title: Store and retrieve processed LIDAR data from a PostGIS database
-Version: 0.1.1
-Date: 2019-09-03
+Version: 0.1.2
+Date: 2019-09-10
 Authors@R: c(
   person("Meaghan", "Jenkins", role = "aut", email = "mjenkins@uow.edu.au"),
   person("Michael", "Bedward", role = c("aut", "cre"), email = "michael.bedward@gmail.com")
