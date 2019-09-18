@@ -221,12 +221,12 @@ db_create_metadata_table <- function(dbsettings,
 
 #' Import a raster of point counts and its metadata into the database
 #'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
+#'
 #' @param las.path The path and filename of the LAS source file. This can be
 #'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
-#'
-#' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
 #'
 #' @param counts.tablename The name of the table in which to store the raster of
 #'   point counts within vertical layers. Should be in the form
@@ -243,8 +243,8 @@ db_create_metadata_table <- function(dbsettings,
 #'
 #' @export
 #'
-db_import_las <- function(las.path,
-                          dbsettings,
+db_import_las <- function(dbsettings,
+                          las.path,
                           counts.tablename = "rasters.tmp_load",
                           metadata.tablename = "vectors.las_metadata",
                           epsg.code = 3308) {
@@ -261,8 +261,8 @@ db_import_las <- function(las.path,
   counts <- get_stratum_counts(las, StrataCERMB)
 
   # Load point counts for this tile into the temp table
-  pg_load_raster(counts, epsg = epsg.code,
-                 dbsettings,
+  pg_load_raster(dbsettings,
+                 counts, epsg = epsg.code,
                  tablename = counts.tablename,
                  tilew = ncol(counts),
                  tileh = nrow(counts))
@@ -271,24 +271,58 @@ db_import_las <- function(las.path,
   pg_sql(dbsettings, command = CERMBlidarpostgis::SQL_MergeImportRaster)
 
   message("Importing LAS metadata")
-  db_load_tile_metadata(las, las.path,
-                        dbsettings,
+  db_load_tile_metadata(dbsettings,
+                        las, las.path,
                         tablename = metadata.tablename)
 }
 
 
-#' Check if a LAS image has already been imported
+#' Check if one or more LAS files have been imported into the database
+#'
+#' When a LAS image is imported, the name of the file from which it was read is
+#' recorded in the \code{vectors.las_metadata} table of the database. This
+#' function queries that table to see which, if any, of the names provided
+#' in the \code{filenames} argument are present in that table.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
+#'
+#' @param filenames A character vector of one or more file names. These can be
+#'   full paths or file names with or without extensions. File extensions
+#'   (e.g. \code{.las; .LAZ; .zip}) and are ignored for comparison purposes, as
+#'   is case.
+#'
+#' @return A logical vector with the input file names as element names and
+#'   \code{TRUE} values indicating files that have already been imported.
 #'
 #' @export
 #'
-db_find_las <- function(las.path, dbsettings) {
-  stop("Sorry - not working yet")
+db_lasfile_imported <- function(dbsettings, filenames) {
+  if (!pg_table_exists(dbsettings, "las_metadata")) {
+    # Empty database
+    rep(FALSE, length(filenames))
 
-  fname <- .file_remove_extension( .file_from_path(las.path) )
+  } else {
+    sapply(filenames, function(fname) {
+      fname <- .file_remove_extension( .file_from_path(fname) )
+
+      POOL <- .settings_get_pool(dbsettings)
+
+      command <- glue::glue("SELECT COUNT(*) AS nrecs
+                           FROM vectors.las_metadata
+                           WHERE filename ILIKE '{fname}%'")
+
+      x <- pool::dbGetQuery(POOL, command)
+      x$nrecs[1] > 0
+    })
+  }
 }
 
 
 #' Import a raster into the database
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param r The raster to import.
 #'
@@ -297,9 +331,6 @@ db_find_las <- function(las.path, dbsettings) {
 #'   the raster table.
 #'
 #' @param epsg EPSG code for the raster projection.
-#'
-#' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the raster table in the form \code{'schema.tablename'}.
 #'
@@ -322,8 +353,8 @@ db_find_las <- function(las.path, dbsettings) {
 #'
 #' @export
 #'
-pg_load_raster <- function(r, epsg,
-                           dbsettings,
+pg_load_raster <- function(dbsettings,
+                           r, epsg,
                            tablename,
                            replace = FALSE,
                            tilew = NULL, tileh = NULL,
@@ -368,19 +399,20 @@ pg_load_raster <- function(r, epsg,
 
 #' Import LAS tile metadata into the database
 #'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
+#'
 #' @param las A LAS object.
 #'
 #' @param filename Path or filename from which the LAS object was read.
-#'
-#' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
 #'
 #' @param tablename Name of the raster table in the form \code{'schema.tablename'}.
 #'
 #' @export
 #'
-db_load_tile_metadata <- function(las, filename,
-                                  dbsettings, tablename) {
+db_load_tile_metadata <- function(dbsettings,
+                                  las, filename,
+                                  tablename) {
 
   if (!pg_table_exists(dbsettings, tablename)) {
     msg <- glue::glue("Table {tablename} not found in database {dbname}")
@@ -443,7 +475,7 @@ db_load_tile_metadata <- function(las, filename,
 #' @examples
 #' \dontrun{
 #' dbsettings <- connect_to_database(...)
-#' pg_table_exists(dbsettings, "postgis.bega")
+#' pg_table_exists(dbsettings, "rasters.point_counts_union")
 #' }
 #'
 #' @export

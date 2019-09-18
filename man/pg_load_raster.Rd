@@ -4,16 +4,16 @@
 \alias{pg_load_raster}
 \title{Import a raster into the database}
 \usage{
-pg_load_raster(r, epsg, dbsettings, tablename, replace = FALSE,
+pg_load_raster(dbsettings, r, epsg, tablename, replace = FALSE,
   tilew = NULL, tileh = NULL, flags = "-M -Y")
 }
 \arguments{
+\item{dbsettings}{A named list of database connection settings returned
+by \code{\link{connect_to_database}}.}
+
 \item{r}{The raster to import.}
 
 \item{epsg}{EPSG code for the raster projection.}
-
-\item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
 
 \item{tablename}{Name of the raster table in the form \code{'schema.tablename'}.}
 
