@@ -463,6 +463,89 @@ db_load_tile_metadata <- function(dbsettings,
 }
 
 
+#' Export raster point count data that intersects with one or more features
+#'
+#' This function takes a set of features (points, lines or polygons), identifies
+#' the raster tiles of point count data that the features intersect with, and
+#' exports these to a GeoTIFF file.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{\link{connect_to_database}}.
+#'
+#' @param geom The feature(s) to intersect.
+#'
+#' @param outpath A path and filename for the output GeoTIFF file.
+#'
+#' @param default.epsg EPSG code to assume for the features if none has been
+#'   assigned (e.g. with \code{sf::st_crs}).
+#'
+#' @return A raster stack linked to the exported GeoTIFF file.
+#'
+#' @export
+#'
+db_export_point_counts <- function(dbsettings, geom, outpath,
+                                default.epsg = 3308) {
+
+  if (inherits(geom, what = c("sfc", "sfg")))
+    g <- geom
+  else if (inherits(geom, what = "sf")) {
+    isgeom <- sapply(geom, inherits, what = "sfc")
+    if (!sum(isgeom) == 1)
+      stop("Failed to find geometry column in sf data frame")
+    g <- geom[, isgeom, drop=TRUE]
+  }
+
+  g.crs <- sf::st_crs(g)
+  if (!is.na(g.crs)) epsg <- g.crs$epsg
+  else epsg <- default.epsg
+
+  g.values <- sapply(g, function(gg) {
+    glue::glue("ST_GeomFromText('{sf::st_as_text(gg)}', {epsg})")
+  })
+
+  g.values <- paste( paste("(", g.values, ")"), collapse = ",")
+
+  command <- glue::glue("
+    BEGIN;
+    --------
+    CREATE TEMPORARY TABLE tmp_features (
+      feature geometry(GEOMETRY, {epsg}) NOT NULL
+    );
+    --------
+    INSERT INTO tmp_features (feature)
+      VALUES {g.values};
+    --------
+    CREATE TEMPORARY TABLE tmp_export_rast AS
+      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(u.rast), 'GTiff')) AS loid
+      FROM rasters.point_counts_union AS u, tmp_features as f
+      WHERE ST_Intersects(u.rast, f.feature);
+    --------
+    SELECT lo_export(loid, '{outpath}')
+      FROM tmp_export_rast;
+    --------
+    SELECT lo_unlink(loid)
+      FROM tmp_export_rast;
+    --------
+    DROP TABLE tmp_features;
+    DROP TABLE tmp_export_rast;
+    --------
+    COMMIT;
+  ")
+
+  the.pool <- .settings_get_pool(dbsettings)
+  pool::dbExecute(the.pool, command)
+
+  if (file.exists(outpath)) {
+    r <- raster::stack(outpath)
+    names(r) <- paste("height", 1:raster::nlayers(r), sep = ".")
+    r
+  } else {
+    warning("Output GeoTIFF file was not created")
+    NULL
+  }
+}
+
+
 #' Check if a table exists in the given database
 #'
 #' @param dbsettings A named list of database connection settings returned
