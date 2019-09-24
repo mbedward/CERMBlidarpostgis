@@ -18,16 +18,6 @@ given the same name plus the suffix \code{'_union'}.}
 
 \item{username}{Name of the user (default: 'postgres').}
 }
-\value{
-Invisibly returns a list with the following elements:
-  \describe{
-    \item{status}{A two-element integer vector with status codes for the
-      creation of each table: 0 for success (as per \code{system});
-      1 for skipped (the table already existed); or -1 for error.}
-    \item{msg}{A two-element list with the messages returned
-      by the database for each table.}
-  }
-}
 \description{
 This function sets up two tables to store multi-band rasters of integer point
 counts within voxels. Each table has two columns: \code{rid}: an

@@ -122,15 +122,6 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'
 #' @param username Name of the user (default: 'postgres').
 #'
-#' @return Invisibly returns a list with the following elements:
-#'   \describe{
-#'     \item{status}{A two-element integer vector with status codes for the
-#'       creation of each table: 0 for success (as per \code{system});
-#'       1 for skipped (the table already existed); or -1 for error.}
-#'     \item{msg}{A two-element list with the messages returned
-#'       by the database for each table.}
-#'   }
-#'
 #' @export
 #'
 db_create_counts_table <- function(dbsettings,
@@ -138,30 +129,19 @@ db_create_counts_table <- function(dbsettings,
                                    username = "postgres") {
 
   command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                      {tablename} \\
-                      (rid serial primary key, rast raster);")
-
-  out <- pg_sql(dbsettings, command)
-
-  status <-
-    if (any(stringr::str_detect(out, "ERROR"))) -1
-    else if(any(stringr::str_detect(out, "NOTICE.+skipping"))) 1
-    else 0
-
-  if (status >= 0) {
-    command2 <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                      {tablename}_union \\
+                        {tablename} \\
                         (rid serial primary key, rast raster);")
 
-    out2 <- pg_sql(dbsettings, command2)
+  p <- .settings_get_pool(dbsettings)
+  pool::dbExecute(p, command)
 
-    status2 <-
-      if (any(stringr::str_detect(out2, "ERROR"))) -1
-      else if(any(stringr::str_detect(out2, "NOTICE.+skipping"))) 1
-      else 0
-  }
+  command2 <- glue::glue("CREATE TABLE IF NOT EXISTS \\
+                         {tablename}_union \\
+                         (rid serial primary key, rast raster);")
 
-  invisible( list(status = c(status, status2), msg = list(out, out2)) )
+  # Capture integer result to avoid returning a value that is of no
+  # use to the caller
+  dummy <- pool::dbExecute(p, command2)
 }
 
 
@@ -178,13 +158,6 @@ db_create_counts_table <- function(dbsettings,
 #' @param tablename Name of the table to hold metadata and las tile bounding
 #'   polygons in the form \code{'schema.tablename'}. Defaults to
 #'   \code{'vectors.las_metadata'}.
-#'
-#' @return Invisibly returns a list with the following elements:
-#'   \describe{
-#'     \item{status}{An integer code: 0 for success (as per \code{system});
-#'       1 for skipped (the table already existed); or -1 for error.}
-#'     \item{msg}{Message returned by the database.}
-#'   }
 #'
 #' @export
 #'
@@ -208,14 +181,11 @@ db_create_metadata_table <- function(dbsettings,
     nflightlines integer NOT NULL, \\
     bounds geometry(Polygon, 3308) NOT NULL);" )
 
-  out <- pg_sql(dbsettings, command)
+  p <- .settings_get_pool(dbsettings)
 
-  status <-
-    if (any(stringr::str_detect(out, "ERROR"))) -1
-  else if(any(stringr::str_detect(out, "NOTICE.+skipping"))) 1
-  else 0
-
-  invisible( list(status = status, msg = out) )
+  # Capture integer result to avoid returning a value that is of no
+  # use to the caller
+  dummy <- pool::dbExecute(p, command2)
 }
 
 
@@ -268,7 +238,8 @@ db_import_las <- function(dbsettings,
                  tileh = nrow(counts))
 
   message("Merging new and existing rasters")
-  pg_sql(dbsettings, command = CERMBlidarpostgis::SQL_MergeImportRaster)
+  p <- .settings_get_pool(dbsettings)
+  pool::dbExecute(p, CERMBlidarpostgis::SQL_MergeImportRaster)
 
   message("Importing LAS metadata")
   db_load_tile_metadata(dbsettings,
@@ -459,7 +430,8 @@ db_load_tile_metadata <- function(dbsettings,
     ST_GeomFromText('{wkt}', {epsgcode}) );
     ")
 
-  pg_sql(dbsettings, command)
+  p <- .settings_get_pool(dbsettings)
+  dummy <- pool::dbExecute(p, command)
 }
 
 

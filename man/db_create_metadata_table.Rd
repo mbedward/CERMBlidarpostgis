@@ -14,14 +14,6 @@ by \code{\link{connect_to_database}}.}
 polygons in the form \code{'schema.tablename'}. Defaults to
 \code{'vectors.las_metadata'}.}
 }
-\value{
-Invisibly returns a list with the following elements:
-  \describe{
-    \item{status}{An integer code: 0 for success (as per \code{system});
-      1 for skipped (the table already existed); or -1 for error.}
-    \item{msg}{Message returned by the database.}
-  }
-}
 \description{
 Each record of the metadata table holds summary information derived from an
 individual LAS file including source file, capture date and times, and point
