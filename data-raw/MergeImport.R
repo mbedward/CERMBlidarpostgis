@@ -7,8 +7,6 @@ SQL_MergeImportRaster <- glue::glue("
 -- 'point_counts_union' which holds mosaiced rasters where pixel
 -- values in overlap areas are the sum of input values for LAS rasters.
 
-BEGIN;
-
 -- Copy data into point_counts table
 insert into rasters.point_counts (rast)
 select rast from rasters.tmp_load;
@@ -48,11 +46,6 @@ select AddRasterConstraints('rasters'::name, 'point_counts_union'::name, 'rast':
 -- Delete records from temporary import tables
 delete from tmp_load;
 delete from tmp_union;
-
-COMMIT;
-
-VACUUM ANALYZE rasters.point_counts;
-VACUUM ANALYZE rasters.point_counts_union;
 ")
 
 usethis::use_data(SQL_MergeImportRaster, overwrite = TRUE)

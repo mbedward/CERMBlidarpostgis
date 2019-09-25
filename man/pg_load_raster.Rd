@@ -9,7 +9,7 @@ pg_load_raster(dbsettings, r, epsg, tablename, replace = FALSE,
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{r}{The raster to import.}
 
@@ -40,4 +40,7 @@ the raster table.}
 }
 \description{
 Import a raster into the database
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

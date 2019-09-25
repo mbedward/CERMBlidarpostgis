@@ -4,25 +4,15 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(dbsettings, las.path,
-  counts.tablename = "rasters.tmp_load",
-  metadata.tablename = "vectors.las_metadata", epsg.code = 3308)
+db_import_las(dbsettings, las.path, epsg.code = 3308)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{las.path}{The path and filename of the LAS source file. This can be
 an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 file.}
-
-\item{counts.tablename}{The name of the table in which to store the raster of
-point counts within vertical layers. Should be in the form
-\code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.}
-
-\item{metadata.tablename}{The name of the table in which to store the summary
-data and bounding polygon for the LAS image. Should be in the form
-\code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.}
 
 \item{epsg.code}{The EPSG code for the coordinate reference system to apply
 to data. The point cloud will be re-projected as necessary, prior to
@@ -31,4 +21,7 @@ deriving point counts and other data. The default EPSG code is 3308
 }
 \description{
 Import a raster of point counts and its metadata into the database
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

@@ -4,18 +4,19 @@
 \alias{db_load_tile_metadata}
 \title{Import LAS tile metadata into the database}
 \usage{
-db_load_tile_metadata(dbsettings, las, filename, tablename)
+db_load_tile_metadata(dbsettings, las, filename)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{las}{A LAS object.}
 
 \item{filename}{Path or filename from which the LAS object was read.}
-
-\item{tablename}{Name of the raster table in the form \code{'schema.tablename'}.}
 }
 \description{
 Import LAS tile metadata into the database
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

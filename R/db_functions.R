@@ -20,7 +20,7 @@
 #' 'escaped', e.g. \code{'\\dt'} otherwise obscure error messages will result.
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param command A valid SQL command as a character string or \code{glue}
 #'   object. Can also be a special \code{psql} command (see Details). Not
@@ -35,12 +35,13 @@
 #'
 #' @return Text of the database status message after running the command.
 #'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
+#'
 #' @examples
 #' \dontrun{
-#' # Must do this once at the start of an R session
 #' Sys.setenv(PGPASSWORD = "cermb")
 #'
-#' dbsettings <- connect_to_database("cermb_lidar")
+#' dbsettings <- db_connect_postgis("cermb_lidar")
 #'
 #' pg_sql(dbsettings, "SELECT COUNT(*) AS NRECS FROM FOO;")
 #' }
@@ -48,10 +49,6 @@
 #' @export
 #'
 pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
-
-  PSQL <- .settings_get_psql(dbsettings)
-  dbname <- .settings_get_dbname(dbsettings)
-  username <- .settings_get_username(dbsettings)
 
   command <- .parse_command(command)
 
@@ -63,8 +60,8 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
     fsql <- file
   }
 
-  args <- glue::glue('-d {dbname} -U {username} -f {fsql}')
-  out <- system2(command = PSQL, args = args, stdout = TRUE)
+  args <- glue::glue('-d {dbsettings$DBNAME} -U {dbsettings$USERNAME} -f {fsql}')
+  out <- system2(command = dbsettings$PSQL, args = args, stdout = TRUE)
 
   unlink(fsql)
 
@@ -95,128 +92,26 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 }
 
 
-#' Create the two point counts tables if they do not already exist
-#'
-#' This function sets up two tables to store multi-band rasters of integer point
-#' counts within voxels. Each table has two columns: \code{rid}: an
-#' auto-incremented integer record number; \code{rast} raster tiles (i.e.
-#' PostGIS storage tiles rather than LAS images). The first of the two tables
-#' holds rasters derived from individual LAS images. The PostGIS tile size for
-#' each record corresponds to the dimensions of the input poinit counts raster.
-#' The second table, identified by the suffix \code{'_union'} holds rasters that
-#' have been mosaiced by summing the values of overlapping edge pixels.
-#'
-#' The reason for holding duplicate data is to allow for deletion and
-#' re-importing of data (e.g. to fix artefacts in a particular raster) that
-#' would otherwise be difficult with just the mosaiced data. There is no field
-#' explicitly linking raster records to records in other tables (e.g. the LAS
-#' metadata table). Such relationships are found via spatial queries.
-#'
-#' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
-#'
-#' @param tablename Name of the raster table to hold point counts for individual
-#'   (not mosaiced) LAS images in the form \code{'schema.tablename'}. Defaults
-#'   to \code{'rasters.point_counts'}. The table for mosaiced rasters will be
-#'   given the same name plus the suffix \code{'_union'}.
-#'
-#' @param username Name of the user (default: 'postgres').
-#'
-#' @export
-#'
-db_create_counts_table <- function(dbsettings,
-                                   tablename = "rasters.point_counts",
-                                   username = "postgres") {
-
-  command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                        {tablename} \\
-                        (rid serial primary key, rast raster);")
-
-  p <- .settings_get_pool(dbsettings)
-  pool::dbExecute(p, command)
-
-  command2 <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                         {tablename}_union \\
-                         (rid serial primary key, rast raster);")
-
-  # Capture integer result to avoid returning a value that is of no
-  # use to the caller
-  dummy <- pool::dbExecute(p, command2)
-}
-
-
-#' Create the LAS metadata table if it does not already exist
-#'
-#' Each record of the metadata table holds summary information derived from an
-#' individual LAS file including source file, capture date and times, and point
-#' counts and average point density. The table also has a geometry column for
-#' the bounding rectangle of each LAS image.
-#'
-#' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
-#'
-#' @param tablename Name of the table to hold metadata and las tile bounding
-#'   polygons in the form \code{'schema.tablename'}. Defaults to
-#'   \code{'vectors.las_metadata'}.
-#'
-#' @export
-#'
-db_create_metadata_table <- function(dbsettings,
-                                     tablename = "vectors.las_metadata") {
-  command <- glue::glue(
-    "CREATE TABLE IF NOT EXISTS \\
-    {tablename} (\\
-    id serial PRIMARY KEY, \\
-    filename text NOT NULL, \\
-    capture_start timestamp with time zone NOT NULL, \\
-    capture_end timestamp with time zone NOT NULL, \\
-    area double precision NOT NULL, \\
-    point_density double precision NOT NULL, \\
-    npts_ground integer NOT NULL, \\
-    npts_veg integer NOT NULL, \\
-    npts_building integer NOT NULL, \\
-    npts_water integer NOT NULL, \\
-    npts_other integer NOT NULL, \\
-    npts_total integer NOT NULL, \\
-    nflightlines integer NOT NULL, \\
-    bounds geometry(Polygon, 3308) NOT NULL);" )
-
-  p <- .settings_get_pool(dbsettings)
-
-  # Capture integer result to avoid returning a value that is of no
-  # use to the caller
-  dummy <- pool::dbExecute(p, command2)
-}
-
-
 #' Import a raster of point counts and its metadata into the database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param las.path The path and filename of the LAS source file. This can be
 #'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
-#'
-#' @param counts.tablename The name of the table in which to store the raster of
-#'   point counts within vertical layers. Should be in the form
-#'   \code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.
-#'
-#' @param metadata.tablename The name of the table in which to store the summary
-#'   data and bounding polygon for the LAS image. Should be in the form
-#'   \code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.
 #'
 #' @param epsg.code The EPSG code for the coordinate reference system to apply
 #'   to data. The point cloud will be re-projected as necessary, prior to
 #'   deriving point counts and other data. The default EPSG code is 3308
 #'   (New South Wales Lambert projection / GDA94).
 #'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
+#'
 #' @export
 #'
 db_import_las <- function(dbsettings,
                           las.path,
-                          counts.tablename = "rasters.tmp_load",
-                          metadata.tablename = "vectors.las_metadata",
                           epsg.code = 3308) {
 
   message("Reading data and normalizing point heights")
@@ -233,18 +128,19 @@ db_import_las <- function(dbsettings,
   # Load point counts for this tile into the temp table
   pg_load_raster(dbsettings,
                  counts, epsg = epsg.code,
-                 tablename = counts.tablename,
+                 tablename = "rasters.tmp_load",
                  tilew = ncol(counts),
                  tileh = nrow(counts))
 
   message("Merging new and existing rasters")
-  p <- .settings_get_pool(dbsettings)
+  p <- dbsettings$POOL
   pool::dbExecute(p, CERMBlidarpostgis::SQL_MergeImportRaster)
+  pool::dbExecute(p, "VACUUM ANALYZE rasters.point_counts;")
+  pool::dbExecute(p, "VACUUM ANALYZE rasters.point_counts_union;")
 
   message("Importing LAS metadata")
   db_load_tile_metadata(dbsettings,
-                        las, las.path,
-                        tablename = metadata.tablename)
+                        las, las.path)
 }
 
 
@@ -256,12 +152,14 @@ db_import_las <- function(dbsettings,
 #' in the \code{filenames} argument are present in that table.
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param filenames A character vector of one or more file names. These can be
 #'   full paths or file names with or without extensions. File extensions
 #'   (e.g. \code{.las; .LAZ; .zip}) and are ignored for comparison purposes, as
 #'   is case.
+#'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 #'
 #' @return A logical vector with the input file names as element names and
 #'   \code{TRUE} values indicating files that have already been imported.
@@ -269,31 +167,28 @@ db_import_las <- function(dbsettings,
 #' @export
 #'
 db_lasfile_imported <- function(dbsettings, filenames) {
-  if (!pg_table_exists(dbsettings, "las_metadata")) {
-    # Empty database
-    rep(FALSE, length(filenames))
+  if (!pg_table_exists(dbsettings, dbsettings$TABLE_METADATA))
+    stop("No metadata table - is this a properly initialized database?")
 
-  } else {
-    sapply(filenames, function(fname) {
-      fname <- .file_remove_extension( .file_from_path(fname) )
+  sapply(filenames, function(fname) {
+    fname <- .file_remove_extension( .file_from_path(fname) )
 
-      POOL <- .settings_get_pool(dbsettings)
+    p <- dbsettings$POOL
 
-      command <- glue::glue("SELECT COUNT(*) AS nrecs
-                           FROM vectors.las_metadata
+    command <- glue::glue("SELECT COUNT(*) AS nrecs
+                           FROM {dbsettings$TABLE_METADATA}
                            WHERE filename ILIKE '{fname}%'")
 
-      x <- pool::dbGetQuery(POOL, command)
-      x$nrecs[1] > 0
-    })
-  }
+    x <- pool::dbGetQuery(p, command)
+    x$nrecs[1] > 0
+  })
 }
 
 
 #' Import a raster into the database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param r The raster to import.
 #'
@@ -322,6 +217,8 @@ db_lasfile_imported <- function(dbsettings, filenames) {
 #'   use COPY instead of INSERT statements for speed (-Y). See
 #'   raster2pgsql documentation for details of other options.
 #'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
+#'
 #' @export
 #'
 pg_load_raster <- function(dbsettings,
@@ -330,11 +227,6 @@ pg_load_raster <- function(dbsettings,
                            replace = FALSE,
                            tilew = NULL, tileh = NULL,
                            flags = "-M -Y") {
-
-  dbname <- .settings_get_dbname(dbsettings)
-  username <- .settings_get_username(dbsettings)
-  PSQL <- .settings_get_psql(dbsettings)
-  R2P <- .settings_get_r2p(dbsettings)
 
   is.tbl <- pg_table_exists(dbsettings, tablename)
   if (replace) {
@@ -358,10 +250,10 @@ pg_load_raster <- function(dbsettings,
   stopifnot(tilew > 0, tileh > 0)
 
   args <- glue::glue('{in.mode} -s {epsg} -t {tilew}x{tilew} {flags} {ftif} {tablename}')
-  system2(command = R2P, args = args, stdout = fsql)
+  system2(command = dbsettings$R2P, args = args, stdout = fsql)
 
-  args <- glue::glue('-d {dbname} -U {username} -f {fsql}')
-  system2(command = PSQL, args = args)
+  args <- glue::glue('-d {dbsettings$DBNAME} -U {dbsettings$USERNAME} -f {fsql}')
+  system2(command = dbsettings$PSQL, args = args)
 
   unlink(ftif)
   unlink(fsql)
@@ -371,22 +263,23 @@ pg_load_raster <- function(dbsettings,
 #' Import LAS tile metadata into the database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param las A LAS object.
 #'
 #' @param filename Path or filename from which the LAS object was read.
 #'
-#' @param tablename Name of the raster table in the form \code{'schema.tablename'}.
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 #'
 #' @export
 #'
 db_load_tile_metadata <- function(dbsettings,
-                                  las, filename,
-                                  tablename) {
+                                  las, filename) {
 
-  if (!pg_table_exists(dbsettings, tablename)) {
-    msg <- glue::glue("Table {tablename} not found in database {dbname}")
+  tblname <- dbsettings$TABLE_METADATA
+
+  if (!pg_table_exists(dbsettings, tblname)) {
+    msg <- glue::glue("Table {tblname} not found in database {dbname}")
     stop(msg)
   }
 
@@ -404,10 +297,8 @@ db_load_tile_metadata <- function(dbsettings,
   wkt <- sf::st_as_text(bounds)
   area <- sf::st_area(bounds)
 
-  tformat <- function(timestamp) format(timestamp, usetz = TRUE)
-
   command <- glue::glue(
-    "insert into {tablename} \\
+    "insert into {tblname} \\
     (filename, capture_start, capture_end, \\
     area, \\
     point_density, \\
@@ -416,8 +307,8 @@ db_load_tile_metadata <- function(dbsettings,
     bounds) \\
     values(\\
     '{filename}', \\
-    '{tformat(scantimes[1,1])}', \\
-    '{tformat(scantimes[1,2])}', \\
+    '{.tformat(scantimes[1,1])}', \\
+    '{.tformat(scantimes[1,2])}', \\
     {area}, \\
     {ptotal / area}, \\
     {pcounts$ground}, \\
@@ -430,8 +321,92 @@ db_load_tile_metadata <- function(dbsettings,
     ST_GeomFromText('{wkt}', {epsgcode}) );
     ")
 
-  p <- .settings_get_pool(dbsettings)
+  p <- dbsettings$POOL
   dummy <- pool::dbExecute(p, command)
+}
+
+
+#' Query bounding polygons of imported LAS images
+#'
+#' This function queries the \code{'las_metadata'} table with optional
+#' subsetting based on LAS image file names and/or capture dates. It returns an
+#' \code{'sf'} spatial data frame containing the source file name, start and end
+#' capture dates and times, and bounding rectangle of the point cloud as a
+#' polygon. If no file name or date constraints are specified, all records in
+#' the table are returned.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @param file.pattern A string pattern to match LAS source file names. Matching is done ignoring case.
+#'   The pattern can be any of the following:
+#'   \itemize{
+#'     \item A plain string - to return file names containing this string;
+#'     \item An SQL string expression with \code{'%'} wildcard - e.g. \code{'Bega%5946%'};
+#'     \item A regular expression - e.g. \code{'^Bega.+5946'}.
+#'   }
+#'   The default (\code{NULL}) means match any file name.
+#'
+#' @param capture.start Beginning of time window for LAS images. The default
+#'   \code{NULL} means no start time constraint.
+#'
+#' @param capture.end End of time window for LAS images. The default \code{NULL}
+#'   means no end time constraint.
+#'
+#' @export
+#'
+db_get_las_bounds <- function(dbsettings,
+                              file.pattern = NULL,
+                              capture.start = NULL, capture.end = NULL) {
+
+  file.pattern <- .first_elem(file.pattern)
+  capture.start <- .first_elem(capture.start)
+  capture.end <- .first_elem(capture.end)
+
+  where.cond <- NULL
+  if (!is.null(file.pattern) | !is.null(capture.start) | !is.null(capture.end)) {
+    if (!is.null(file.pattern)) {
+      if (stringr::str_detect(file.pattern, "%"))
+        where.cond <- c(where.cond, glue::glue("filename ILIKE '{file.pattern}'"))
+      else if (stringr::str_detect(file.pattern, "[\\*\\+\\[\\]\\^\\$]+"))
+        where.cond <- c(where.cond, glue::glue("filename ~* '{file.pattern}'"))
+      else
+        where.cond <- c(where.cond, glue::glue("filename ILIKE '%{file.pattern}%'"))
+    }
+
+    if (!is.null(capture.start))
+      where.cond <- c(where.cond, glue::glue("capture_start >= '{.tformat(capture.start)}'"))
+
+    if (!is.null(capture.end))
+      where.cond <- c(where.cond, glue::glue("capture_end <= '{.tformat(capture.end)}'"))
+
+    where.cond <- paste("WHERE", paste(where.cond, collapse=" AND "))
+
+  } else {
+    # No file name or time conditions
+    where.cond <- ""
+  }
+
+  command <- glue::glue("SELECT filename, capture_start, capture_end,
+                        ST_AsEWKT(bounds) AS geometry
+                        FROM {dbsettings$TABLE_METADATA}
+                        {where.cond};")
+
+  p <- dbsettings$POOL
+  res <- pool::dbGetQuery(p, command)
+
+  if (nrow(res) > 0) {
+    res$geometry <- sf::st_as_sfc(res$geometry)
+  }
+  else {
+    # Empty result
+    res <- data.frame(filename = character(0),
+                      capture_start = as.POSIXct(character(0), tz = "UTC"),
+                      capture_end = as.POSIXct(character(0), tz = "UTC"),
+                      sf::st_sfc())
+  }
+
+  sf::st_sf(res)
 }
 
 
@@ -442,7 +417,7 @@ db_load_tile_metadata <- function(dbsettings,
 #' exports these to a GeoTIFF file.
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param geom The feature(s) to intersect.
 #'
@@ -452,6 +427,8 @@ db_load_tile_metadata <- function(dbsettings,
 #'   assigned (e.g. with \code{sf::st_crs}).
 #'
 #' @return A raster stack linked to the exported GeoTIFF file.
+#'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 #'
 #' @export
 #'
@@ -478,8 +455,6 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
   g.values <- paste( paste("(", g.values, ")"), collapse = ",")
 
   command <- glue::glue("
-    BEGIN;
-    --------
     CREATE TEMPORARY TABLE tmp_features (
       feature geometry(GEOMETRY, {epsg}) NOT NULL
     );
@@ -489,7 +464,7 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     --------
     CREATE TEMPORARY TABLE tmp_export_rast AS
       SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(u.rast), 'GTiff')) AS loid
-      FROM rasters.point_counts_union AS u, tmp_features as f
+      FROM {dbsettings$TABLE_COUNTS_UNION} AS u, tmp_features as f
       WHERE ST_Intersects(u.rast, f.feature);
     --------
     SELECT lo_export(loid, '{outpath}')
@@ -500,12 +475,12 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     --------
     DROP TABLE tmp_features;
     DROP TABLE tmp_export_rast;
-    --------
-    COMMIT;
   ")
 
-  the.pool <- .settings_get_pool(dbsettings)
-  pool::dbExecute(the.pool, command)
+  p <- dbsettings$POOL
+  pool::dbBegin(p)
+  pool::dbExecute(p, command)
+  pool::dbCommit(p)
 
   if (file.exists(outpath)) {
     r <- raster::stack(outpath)
@@ -521,27 +496,28 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
 #' Check if a table exists in the given database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
 #' @param tablename Name of the table in the form \code{schema.tablename}.
 #'
 #' @return \code{TRUE} if the table was found; \code{FALSE} otherwise.
 #'
+#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
+#'
 #' @examples
 #' \dontrun{
-#' dbsettings <- connect_to_database(...)
+#' dbsettings <- db_connect_postgis(...)
 #' pg_table_exists(dbsettings, "rasters.point_counts_union")
 #' }
 #'
 #' @export
 #'
 pg_table_exists <- function(dbsettings, tablename) {
-  POOL <- .settings_get_pool(dbsettings)
-
+  p <- dbsettings$POOL
   command <- glue::glue("select count(*) as n from {tablename};")
 
   o <- options(warn = -1, show.error.messages = FALSE)
-  x <- try(pool::dbGetQuery(POOL, command))
+  x <- try(pool::dbGetQuery(p, command))
   options(o)
 
   !is.null(x)
@@ -564,4 +540,36 @@ pg_table_exists <- function(dbsettings, tablename) {
     pos <- -1
 
   stringr::str_sub(filename, 1, pos)
+}
+
+
+# Format a time stamp to include the time zone
+# (used by db_load_tile_metadata)
+.tformat <- function(timestamp, tz = "UTC") {
+  if (inherits(timestamp, "POSIXt")){
+    format(timestamp, usetz = TRUE)
+  } else if (inherits(timestamp, "character")) {
+    x <- lubridate::parse_date_time(timestamp,
+                                    orders = c("ymd", "ymd H", "ymd HM", "ymd HMS"),
+                                    tz=tz)
+    format(timestamp, usetz = TRUE)
+  } else {
+    stop("Argument timestamp should be POSIXt or character")
+  }
+}
+
+
+.first_elem <- function(x, msg = TRUE) {
+  if (is.null(x)) {
+    NULL
+  }
+  else if (length(x) > 1) {
+    if (msg) {
+      nm <- deparse(substitute(x))
+      message("Ignoring all but first element for ", nm)
+    }
+    x[1]
+  } else {
+    x
+  }
 }

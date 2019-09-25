@@ -8,7 +8,7 @@ db_lasfile_imported(dbsettings, filenames)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{filenames}{A character vector of one or more file names. These can be
 full paths or file names with or without extensions. File extensions
@@ -24,4 +24,7 @@ When a LAS image is imported, the name of the file from which it was read is
 recorded in the \code{vectors.las_metadata} table of the database. This
 function queries that table to see which, if any, of the names provided
 in the \code{filenames} argument are present in that table.
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

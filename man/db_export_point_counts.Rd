@@ -8,7 +8,7 @@ db_export_point_counts(dbsettings, geom, outpath, default.epsg = 3308)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{geom}{The feature(s) to intersect.}
 
@@ -24,4 +24,7 @@ A raster stack linked to the exported GeoTIFF file.
 This function takes a set of features (points, lines or polygons), identifies
 the raster tiles of point count data that the features intersect with, and
 exports these to a GeoTIFF file.
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

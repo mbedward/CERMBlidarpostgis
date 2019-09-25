@@ -8,7 +8,7 @@ pg_sql(dbsettings, command = NULL, file = NULL, quiet = TRUE)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{command}{A valid SQL command as a character string or \code{glue}
 object. Can also be a special \code{psql} command (see Details). Not
@@ -47,12 +47,14 @@ semi-colon. Note however that R will require the leading backslash to be
 }
 \examples{
 \dontrun{
-# Must do this once at the start of an R session
 Sys.setenv(PGPASSWORD = "cermb")
 
-dbsettings <- connect_to_database("cermb_lidar")
+dbsettings <- db_connect_postgis("cermb_lidar")
 
 pg_sql(dbsettings, "SELECT COUNT(*) AS NRECS FROM FOO;")
 }
 
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }

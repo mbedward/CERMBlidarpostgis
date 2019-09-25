@@ -8,7 +8,7 @@ pg_table_exists(dbsettings, tablename)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
-by \code{\link{connect_to_database}}.}
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{tablename}{Name of the table in the form \code{schema.tablename}.}
 }
@@ -20,8 +20,11 @@ Check if a table exists in the given database
 }
 \examples{
 \dontrun{
-dbsettings <- connect_to_database(...)
+dbsettings <- db_connect_postgis(...)
 pg_table_exists(dbsettings, "rasters.point_counts_union")
 }
 
+}
+\seealso{
+\code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 }
