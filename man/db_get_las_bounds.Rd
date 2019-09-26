@@ -11,11 +11,16 @@ db_get_las_bounds(dbsettings, file.pattern = NULL,
 \item{dbsettings}{A named list of database connection settings returned
 by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
-\item{capture.start}{Beginning of time window for LAS images. The default
+\item{capture.start}{Beginning of time window for LAS images. Can be specified as a character string or a The default
 \code{NULL} means no start time constraint.}
 
 \item{capture.end}{End of time window for LAS images. The default \code{NULL}
 means no end time constraint.}
+}
+\value{
+An \code{'sf'} spatial data frame containing the source file name,
+  start and end capture dates and times, and bounding rectangle of the point
+  cloud as a polygon.
 }
 \description{
 This function queries the \code{'las_metadata'} table with optional

@@ -347,11 +347,15 @@ db_load_tile_metadata <- function(dbsettings,
 #'   }
 #'   The default (\code{NULL}) means match any file name.
 #'
-#' @param capture.start Beginning of time window for LAS images. The default
+#' @param capture.start Beginning of time window for LAS images. Can be specified as a character string or a The default
 #'   \code{NULL} means no start time constraint.
 #'
 #' @param capture.end End of time window for LAS images. The default \code{NULL}
 #'   means no end time constraint.
+#'
+#' @return An \code{'sf'} spatial data frame containing the source file name,
+#'   start and end capture dates and times, and bounding rectangle of the point
+#'   cloud as a polygon.
 #'
 #' @export
 #'
