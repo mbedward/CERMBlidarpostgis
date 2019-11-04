@@ -11,6 +11,15 @@ db_get_las_bounds(dbsettings, file.pattern = NULL,
 \item{dbsettings}{A named list of database connection settings returned
 by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
+\item{file.pattern}{A string pattern to match LAS source file names. Matching is done ignoring case.
+The pattern can be any of the following:
+\itemize{
+  \item{A plain string - to return file names containing this string;}
+  \item{An SQL string expression with \code{'\%'} wildcard - e.g. \code{'Bega\%5946\%';}}
+  \item{A regular expression - e.g. \code{'^Bega.+5946'}.}
+}
+The default (\code{NULL}) means match any file name.}
+
 \item{capture.start}{Beginning of time window for LAS images. Can be specified as a character string or a The default
 \code{NULL} means no start time constraint.}
 
