@@ -95,27 +95,47 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #' Import a raster of point counts and its metadata into the database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'   by \code{\link{connect_to_database}}.
 #'
 #' @param las.path The path and filename of the LAS source file. This can be
 #'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
+#'
+#' @param dem.path The path and filename of a DEM raster file to use for
+#'   normalizing point heights. This can be an uncompressed (\code{.asc} or
+#'   \code{.tif}) file, or a compressed \code{.zip} file. If \code{NULL}
+#'   (default), then point heights will be normalized via triangulation of
+#'   the LAS ground points using the \code{\link[lidR]{tin}} algorithm
+#'   with \code{\link[lidR]{lasnormalize}}.
+#'
+#' @param counts.tablename The name of the table in which to store the raster of
+#'   point counts within vertical layers. Should be in the form
+#'   \code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.
+#'
+#' @param metadata.tablename The name of the table in which to store the summary
+#'   data and bounding polygon for the LAS image. Should be in the form
+#'   \code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.
 #'
 #' @param epsg.code The EPSG code for the coordinate reference system to apply
 #'   to data. The point cloud will be re-projected as necessary, prior to
 #'   deriving point counts and other data. The default EPSG code is 3308
 #'   (New South Wales Lambert projection / GDA94).
 #'
-#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
-#'
 #' @export
 #'
 db_import_las <- function(dbsettings,
                           las.path,
+                          dem.path = NULL,
+                          counts.tablename = "rasters.tmp_load",
+                          metadata.tablename = "vectors.las_metadata",
                           epsg.code = 3308) {
 
   message("Reading data and normalizing point heights")
-  las <- prepare_tile(las.path)
+
+  if (is.null(dem.path))
+    las <- prepare_tile(las.path, normalize.heights = "tin")
+  else
+    las <- prepare_tile(las.path, normalize.heights = dem.path)
 
   message("Reprojecting point cloud and removing any flight line overlap")
   las <- las %>%
