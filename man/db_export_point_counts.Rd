@@ -10,7 +10,9 @@ db_export_point_counts(dbsettings, geom, outpath, default.epsg = 3308)
 \item{dbsettings}{A named list of database connection settings returned
 by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
-\item{geom}{The feature(s) to intersect.}
+\item{geom}{The feature(s) to intersect. Can also be an \code{Extent} object
+or a 2x2 matrix where the first row is X min,max and the second row is
+Y min,max.}
 
 \item{outpath}{A path and filename for the output GeoTIFF file.}
 
@@ -21,9 +23,10 @@ assigned (e.g. with \code{sf::st_crs}).}
 A raster stack linked to the exported GeoTIFF file.
 }
 \description{
-This function takes a set of features (points, lines or polygons), identifies
-the raster tiles of point count data that the features intersect with, and
-exports these to a GeoTIFF file.
+This function takes a set of features (points, lines, polygons or an extent
+in the form of a matrix or raster Extent object), identifies the raster tiles
+of point count data that the features intersect with, and exports these to a
+GeoTIFF file.
 }
 \seealso{
 \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}

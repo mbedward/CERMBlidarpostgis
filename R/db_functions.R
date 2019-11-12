@@ -437,14 +437,17 @@ db_get_las_bounds <- function(dbsettings,
 
 #' Export raster point count data that intersects with one or more features
 #'
-#' This function takes a set of features (points, lines or polygons), identifies
-#' the raster tiles of point count data that the features intersect with, and
-#' exports these to a GeoTIFF file.
+#' This function takes a set of features (points, lines, polygons or an extent
+#' in the form of a matrix or raster Extent object), identifies the raster tiles
+#' of point count data that the features intersect with, and exports these to a
+#' GeoTIFF file.
 #'
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
-#' @param geom The feature(s) to intersect.
+#' @param geom The feature(s) to intersect. Can also be an \code{Extent} object
+#'   or a 2x2 matrix where the first row is X min,max and the second row is
+#'   Y min,max.
 #'
 #' @param outpath A path and filename for the output GeoTIFF file.
 #'
@@ -467,6 +470,8 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     if (!sum(isgeom) == 1)
       stop("Failed to find geometry column in sf data frame")
     g <- geom[, isgeom, drop=TRUE]
+  } else if (inherits(geom, what = c("matrix", "Extent"))) {
+    g <- sf::st_sfc(.extentToPolygon(geom))
   }
 
   g.crs <- sf::st_crs(g)
@@ -598,3 +603,20 @@ pg_table_exists <- function(dbsettings, tablename) {
     x
   }
 }
+
+
+.extentToPolygon <- function(x) {
+  stopifnot(inherits(x, c("matrix", "Extent")))
+
+  if (class(x) == "matrix") {
+    xy <- c(x[1,], x[2,])
+  } else {
+    xy <- c(x@xmin, x@xmax, x@ymin, x@ymax)
+  }
+
+  ii <- c(1,3, 1,4, 2,4, 2,3, 1,3)
+
+  pts <- matrix(xy[ii], ncol=2, byrow = TRUE)
+  sf::st_polygon(list(pts))
+}
+
