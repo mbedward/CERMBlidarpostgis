@@ -95,7 +95,7 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #' Import a raster of point counts and its metadata into the database
 #'
 #' @param dbsettings A named list of database connection settings returned
-#'   by \code{\link{connect_to_database}}.
+#'   by \code{\link{db_connect_postgis}}.
 #'
 #' @param las.path The path and filename of the LAS source file. This can be
 #'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
@@ -108,6 +108,10 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   the LAS ground points using the \code{\link[lidR]{tin}} algorithm
 #'   with \code{\link[lidR]{lasnormalize}}.
 #'
+#' @param epsg.reproject If an integer EPSG code is provided, the point cloud
+#'   will be reprojected (if necessary) prior to deriving point counts and other
+#'   data. If \code{NULL} (default), no reprojection is done.
+#'
 #' @param counts.tablename The name of the table in which to store the raster of
 #'   point counts within vertical layers. Should be in the form
 #'   \code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.
@@ -116,19 +120,14 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   data and bounding polygon for the LAS image. Should be in the form
 #'   \code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.
 #'
-#' @param epsg.code The EPSG code for the coordinate reference system to apply
-#'   to data. The point cloud will be re-projected as necessary, prior to
-#'   deriving point counts and other data. The default EPSG code is 3308
-#'   (New South Wales Lambert projection / GDA94).
-#'
 #' @export
 #'
 db_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
+                          epsg.reproject = NULL,
                           counts.tablename = "rasters.tmp_load",
-                          metadata.tablename = "vectors.las_metadata",
-                          epsg.code = 3308) {
+                          metadata.tablename = "vectors.las_metadata") {
 
   message("Reading data and normalizing point heights")
 
@@ -137,17 +136,24 @@ db_import_las <- function(dbsettings,
   else
     las <- prepare_tile(las.path, normalize.heights = dem.path)
 
-  message("Reprojecting point cloud and removing any flight line overlap")
-  las <- las %>%
-    reproject_tile(epsg.code) %>%
-    remove_flightline_overlap()
+  if (is.null(epsg.reproject)) {
+    epsg.import <- lidR::epsg(las)
+  } else {
+    message("Reprojecting point cloud")
+    las <- reproject_tile(las, epsg.reproject)
+    epsg.import <- epsg.reproject
+  }
+
+  message("Removing any flight line overlap")
+  las <- remove_flightline_overlap(las)
 
   message("Importing point counts for strata")
   counts <- get_stratum_counts(las, StrataCERMB)
 
   # Load point counts for this tile into the temp table
   pg_load_raster(dbsettings,
-                 counts, epsg = epsg.code,
+                 counts,
+                 epsg = epsg.import,
                  tablename = "rasters.tmp_load",
                  tilew = ncol(counts),
                  tileh = nrow(counts))
