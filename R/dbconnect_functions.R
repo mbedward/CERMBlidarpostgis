@@ -258,13 +258,13 @@ db_connect_postgis <- function(dbname,
   # Retrieve names of schemas and check that one or more of them correspond to supported
   # MGA map zones 49 - 56
   x <- pool::dbGetQuery(p, "SELECT schema_name AS name FROM information_schema.schemata;")
-  x <- stringr::str_subset(x$name, "^mgazone\\d+")
+  x <- stringr::str_subset(x$name, "^mgazone\\d{2}")
 
   if (!any(x %in% paste0("mgazone", 49:56))) {
     stop("Did not find any database schemas for MGA map zones 49-56")
   }
 
-  epsgs <- 28300 + as.integer(stringr::str_extract(x, "\\d$"))
+  epsgs <- 28300 + as.integer(stringr::str_extract(x, "\\d{2}$"))
 
   schemas <- data.frame(
     schema = x,
