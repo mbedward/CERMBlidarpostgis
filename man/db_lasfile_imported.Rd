@@ -21,7 +21,7 @@ A logical vector with the input file names as element names and
 }
 \description{
 When a LAS image is imported, the name of the file from which it was read is
-recorded in the \code{vectors.las_metadata} table of the database. This
+recorded in the \code{lidar.las_metadata} table of the database. This
 function queries that table to see which, if any, of the names provided
 in the \code{filenames} argument are present in that table.
 }

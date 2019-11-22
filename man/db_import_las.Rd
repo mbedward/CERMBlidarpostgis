@@ -4,9 +4,7 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(dbsettings, las.path, dem.path = NULL,
-  epsg.reproject = NULL, counts.tablename = "rasters.tmp_load",
-  metadata.tablename = "vectors.las_metadata")
+db_import_las(dbsettings, las.path, dem.path = NULL)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -22,19 +20,13 @@ normalizing point heights. This can be an uncompressed (\code{.asc} or
 (default), then point heights will be normalized via triangulation of
 the LAS ground points using the \code{\link[lidR]{tin}} algorithm
 with \code{\link[lidR]{lasnormalize}}.}
-
-\item{epsg.reproject}{If an integer EPSG code is provided, the point cloud
-will be reprojected (if necessary) prior to deriving point counts and other
-data. If \code{NULL} (default), no reprojection is done.}
-
-\item{counts.tablename}{The name of the table in which to store the raster of
-point counts within vertical layers. Should be in the form
-\code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.}
-
-\item{metadata.tablename}{The name of the table in which to store the summary
-data and bounding polygon for the LAS image. Should be in the form
-\code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.}
 }
 \description{
-Import a raster of point counts and its metadata into the database
+First, the LAS tile is read from disk and the function checks that it is
+located in one of the map zones supported by the database (each zone's
+data is stored in a separate schema). Next, point heights are normalized,
+any overlap between flight lines is removed, and the counts of vegetation,
+ground and water points are rasterized as vertical layers defined in
+\code{CERMBlidar::CERMBstrata}. Finally, the point count data are imported
+into the database along with meta-data for tile extent, point density, etc.
 }

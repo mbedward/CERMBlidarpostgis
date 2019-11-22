@@ -3,34 +3,38 @@
 #' This function first checks that PostgreSQL version 11 and the PostGIS
 #' extension are installed on the local system and available from the command
 #' line. It then creates a new database containing the PostGIS extension and
-#' the required schemas and tables for data derived from LIDAR images.
+#' the required schemas and tables for data derived from LIDAR images. Note that the PostGIS extension is presently
+#' stored in the 'public' schema rather than a separate schema to allow users to
+#' connect with ArcMap versions prior to 10.7.1.
 #'
-#' Three schemas are created in the new database: 'postgis' (to hold tables and
-#' views used by the PostGIS extension); 'rasters' (to hold raster data tables);
-#' 'vectors' (to hold vector data tables).
-#'
-#' Two raster data tables are created to store multi-band rasters of integer
-#' point counts within voxels. Each table has two columns: \code{rid}: an
-#' auto-incremented integer record number; \code{rast} raster tiles (i.e.
-#' PostGIS storage tiles rather than LAS images). The first table,
-#' 'rasters.point_counts', holds rasters derived from individual LAS images. The
-#' PostGIS tile size for each record corresponds to the dimensions of the input
-#' poinit counts raster. The second table, 'rasters.point_counts_union', holds
-#' rasters that have been mosaiced by summing the values of overlapping edge
-#' pixels. The reason for holding duplicate data is to allow for deletion and
-#' re-importing of data (e.g. to fix artefacts in a particular raster) that
+#' Schemas are created for each of the MGA zones to be supported (default: zones
+#' 54, 55 and 56). Within each schema, two raster data tables are created to
+#' store multi-band rasters of integer point counts within voxels. Each table
+#' has two columns: \code{rid}: an auto-incremented integer record number;
+#' \code{rast} raster tiles (i.e. PostGIS storage tiles rather than LAS images).
+#' The first table, 'point_counts', holds rasters derived from individual LAS
+#' images. The PostGIS tile size for each record corresponds to the dimensions
+#' of the input poinit counts raster. The second table, 'point_counts_union',
+#' holds rasters that have been mosaiced by summing the values of overlapping
+#' edge pixels. The reason for holding duplicate data is to allow for deletion
+#' and re-import of data (e.g. to fix problems in a particular LAS tile) that
 #' would otherwise be difficult with just the mosaiced data.
 #'
-#' A vector data table, 'vectors.las_metadata', is created to store metadata LAS
-#' images including source file name, capture date and times, point counts and
-#' average point density. The table also has a geometry column for the bounding
-#' rectangle of each LAS image.
+#' A vector data table, 'las_metadata', is created in each schema to store
+#' metadata LAS images including source file name, capture date and times, point
+#' counts and average point density. The table also has a geometry column for
+#' the bounding rectangle of each LAS image.
 #'
-#' There is no field explicitly linking raster records to records in other
-#' tables (e.g. the LAS metadata table). Such relationships are found via
-#' spatial queries.
+#' Records in the 'las_metadata' and 'point_counts' tables are related by a
+#' common integer identifier (las_metadata.id = point_counts.metadata_id). No
+#' field explicitly links raster records in the point_counts_union table to
+#' those in other tables. Instead, records can be related via spatial queries.
 #'
 #' @param dbname Database name.
+#'
+#' @param mga.zones MGA map zones (two digit integer) for which schema should
+#'   be created. Presently, only GDA94 map zones 49-56 are supported (EPSG 28349
+#'   - 28356). The default is \code{54:56} for New South Wales map zones.
 #'
 #' @param host Host name. Defaults to \code{'localhost'}.
 #'
@@ -55,11 +59,18 @@
 #' @export
 #'
 db_create_postgis <- function(dbname,
+                              mga.zones = c(54, 55, 56),
                               host = "localhost",
                               port = 5432,
                               username = "postgres",
                               password = NULL,
                               pgpath = "c:/Program Files/PostgreSQL/11/bin") {
+
+  stopifnot(is.character(dbname) && length(dbname) == 1)
+  stopifnot(is.numeric(mga.zones) && length(mga.zones) >= 1)
+
+  # Only MGA zones are supported at the moment
+  stopifnot(all(mga.zones %in% 49:56))
 
   helper.list <- .check_database_installation(pgpath)
   password <- .check_database_password(password)
@@ -88,15 +99,84 @@ db_create_postgis <- function(dbname,
     password = password)
 
   # Install PostGIS
-  pool::dbExecute(p, "CREATE SCHEMA postgis;")
-  pool::dbExecute(p, "CREATE EXTENSION postgis WITH SCHEMA postgis;")
+  # ArcGIS prior to v10.7.1 does not work when PostGIS is installed
+  # somewhere other than the public schema
+  #pool::dbExecute(p, "CREATE SCHEMA postgis;")
+  #pool::dbExecute(p, "CREATE EXTENSION postgis WITH SCHEMA postgis;")
+  pool::dbExecute(p, "CREATE EXTENSION postgis;")
 
-  # Create required schemas and tables
-  pool::dbExecute(p, "CREATE SCHEMA rasters;")
-  pool::dbExecute(p, "CREATE SCHEMA vectors;")
+  tblnames <- .table_names()
 
-  pool::dbExecute(p, glue::glue("ALTER DATABASE {dbname}
-                                SET search_path TO rasters, vectors, postgis, public;"))
+  schemas <- data.frame(
+    schema = paste0("mgazone", mga.zones),
+    epsg = 28300 + mga.zones,
+    stringsAsFactors = FALSE
+  )
+
+  for (ischema in 1:nrow(schemas)) {
+    schema <- schemas[ischema, "schema"]
+    epsg <- schemas[ischema, "epsg"]
+
+    # Create required schemas and tables
+    pool::dbExecute(p, glue::glue("CREATE SCHEMA {schema};"))
+
+    # Table for LAS tile metadata
+    command <- glue::glue(
+      "CREATE TABLE IF NOT EXISTS \\
+      {schema}.{tblnames$TABLE_METADATA} (\\
+      id serial PRIMARY KEY, \\
+      filename text NOT NULL, \\
+      capture_start timestamp with time zone NOT NULL, \\
+      capture_end timestamp with time zone NOT NULL, \\
+      area double precision NOT NULL, \\
+      point_density double precision NOT NULL, \\
+      npts_ground integer NOT NULL, \\
+      npts_veg integer NOT NULL, \\
+      npts_building integer NOT NULL, \\
+      npts_water integer NOT NULL, \\
+      npts_other integer NOT NULL, \\
+      npts_total integer NOT NULL, \\
+      nflightlines integer NOT NULL, \\
+      bounds geometry(Polygon, {epsg}) NOT NULL);" )
+
+    pool::dbExecute(p, command)
+
+    # Table for building points
+    command <- glue::glue(
+      "CREATE TABLE IF NOT EXISTS \\
+      {schema}.{tblnames$TABLE_BUILDINGS} (\\
+      id serial PRIMARY KEY, \\
+      meta_id integer references {schema}.las_metadata(id),
+      height double precision NOT NULL,
+      geom geometry(Point, {epsg}) NOT NULL);"
+    )
+
+    pool::dbExecute(p, command)
+
+    # Table for unmerged LAS tile point counts
+    command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
+                        {schema}.{tblnames$TABLE_COUNTS_RAW} \\
+                        (rid serial primary key, \\
+                         meta_id integer references {schema}.las_metadata(id),
+                         rast raster);")
+
+    pool::dbExecute(p, command)
+
+    # Table for merged point counts
+    command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
+                        {schema}.{tblnames$TABLE_COUNTS_UNION} \\
+                        (rid serial primary key, rast raster);")
+
+    pool::dbExecute(p, command)
+  }
+
+
+  # Set search path
+  schema.path <- paste(schemas[["schema"]], collapse = ", ")
+
+  pool::dbExecute(p, glue::glue("ALTER DATABASE {dbname} \\
+                                SET search_path TO \\
+                                {schema.path}, public;"))
 
   # Disconnect and reconnect to ensure search path and PostGIS support
   pool::poolClose(p)
@@ -109,44 +189,11 @@ db_create_postgis <- function(dbname,
     user = username,
     password = password)
 
-  # Create point count tables
-  tblnames <- .table_names()
-
-  command <- glue::glue("CREATE TABLE IF NOT EXISTS {tblnames$TABLE_COUNTS_RAW} \\
-                        (rid serial primary key, rast raster);")
-
-  pool::dbExecute(p, command)
-
-  command <- glue::glue("CREATE TABLE IF NOT EXISTS {tblnames$TABLE_COUNTS_UNION} \\
-                        (rid serial primary key, rast raster);")
-
-  pool::dbExecute(p, command)
-
-  # Create LAS metadata table
-  command <- glue::glue(
-    "CREATE TABLE IF NOT EXISTS \\
-    {tblnames$TABLE_METADATA} (\\
-    id serial PRIMARY KEY, \\
-    filename text NOT NULL, \\
-    capture_start timestamp with time zone NOT NULL, \\
-    capture_end timestamp with time zone NOT NULL, \\
-    area double precision NOT NULL, \\
-    point_density double precision NOT NULL, \\
-    npts_ground integer NOT NULL, \\
-    npts_veg integer NOT NULL, \\
-    npts_building integer NOT NULL, \\
-    npts_water integer NOT NULL, \\
-    npts_other integer NOT NULL, \\
-    npts_total integer NOT NULL, \\
-    nflightlines integer NOT NULL, \\
-    bounds geometry(Polygon, 3308) NOT NULL);" )
-
-  pool::dbExecute(p, command)
-
 
   # Return settings list
   c(
     helper.list,
+    schemas,
     tblnames,
     list(
       'DBNAME' = dbname,
@@ -208,10 +255,28 @@ db_connect_postgis <- function(dbname,
     user = username,
     password = password)
 
+  # Retrieve names of schemas and check that one or more of them correspond to supported
+  # MGA map zones 49 - 56
+  x <- pool::dbGetQuery(p, "SELECT schema_name AS name FROM information_schema.schemata;")
+  x <- stringr::str_subset(x$name, "^mgazone\\d+")
+
+  if (!any(x %in% paste0("mgazone", 49:56))) {
+    stop("Did not find any database schemas for MGA map zones 49-56")
+  }
+
+  epsgs <- 28300 + as.integer(stringr::str_extract(x, "\\d$"))
+
+  schemas <- data.frame(
+    schema = x,
+    epsg = epsgs,
+    stringsAsFactors = FALSE
+  )
+
   # Return settings list
   c(
     helper.list,
     .table_names(),
+    schemas,
     list(
     'DBNAME' = dbname,
     'USERNAME' = username,
@@ -221,11 +286,27 @@ db_connect_postgis <- function(dbname,
 }
 
 
+#' Close an open connection to a PostGIS LiDAR database
+#'
+#' This is a convenience function, equivalent to calling
+#' \code{pool::poolClose(DBsettings$POOL)} directly.
+#'
+#' @param DBsettings A named list of database settings as returned by
+#'   \code{db_create_postgis} and \code{db_connect_postgis}.
+#'
+#' @export
+#'
+db_disconnect_postgis <- function(dbsettings) {
+  pool::poolClose(DBsettings$POOL)
+}
+
+
 .table_names <- function() {
   list(
-    'TABLE_COUNTS_RAW' = "rasters.point_counts",
-    'TABLE_COUNTS_UNION' = "rasters.point_counts_union",
-    'TABLE_METADATA' = "vectors.las_metadata"
+    'TABLE_COUNTS_RAW' = "point_counts",
+    'TABLE_COUNTS_UNION' = "point_counts_union",
+    'TABLE_METADATA' = "las_metadata",
+    'TABLE_BUILDINGS' = "building_points"
   )
 }
 

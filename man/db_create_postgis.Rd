@@ -4,12 +4,16 @@
 \alias{db_create_postgis}
 \title{Create a new PostGIS database to hold data derived from LIDAR images}
 \usage{
-db_create_postgis(dbname, host = "localhost", port = 5432,
-  username = "postgres", password = NULL,
-  pgpath = "c:/Program Files/PostgreSQL/11/bin")
+db_create_postgis(dbname, mga.zones = c(54, 55, 56),
+  host = "localhost", port = 5432, username = "postgres",
+  password = NULL, pgpath = "c:/Program Files/PostgreSQL/11/bin")
 }
 \arguments{
 \item{dbname}{Database name.}
+
+\item{mga.zones}{MGA map zones (two digit integer) for which schema should
+be created. Presently, only GDA94 map zones 49-56 are supported (EPSG 28349
+- 28356). The default is \code{54:56} for New South Wales map zones.}
 
 \item{host}{Host name. Defaults to \code{'localhost'}.}
 
@@ -34,33 +38,33 @@ A named list of database settings for use with other \code{db_xxx}
 This function first checks that PostgreSQL version 11 and the PostGIS
 extension are installed on the local system and available from the command
 line. It then creates a new database containing the PostGIS extension and
-the required schemas and tables for data derived from LIDAR images.
+the required schemas and tables for data derived from LIDAR images. Note that the PostGIS extension is presently
+stored in the 'public' schema rather than a separate schema to allow users to
+connect with ArcMap versions prior to 10.7.1.
 }
 \details{
-Three schemas are created in the new database: 'postgis' (to hold tables and
-views used by the PostGIS extension); 'rasters' (to hold raster data tables);
-'vectors' (to hold vector data tables).
-
-Two raster data tables are created to store multi-band rasters of integer
-point counts within voxels. Each table has two columns: \code{rid}: an
-auto-incremented integer record number; \code{rast} raster tiles (i.e.
-PostGIS storage tiles rather than LAS images). The first table,
-'rasters.point_counts', holds rasters derived from individual LAS images. The
-PostGIS tile size for each record corresponds to the dimensions of the input
-poinit counts raster. The second table, 'rasters.point_counts_union', holds
-rasters that have been mosaiced by summing the values of overlapping edge
-pixels. The reason for holding duplicate data is to allow for deletion and
-re-importing of data (e.g. to fix artefacts in a particular raster) that
+Schemas are created for each of the MGA zones to be supported (default: zones
+54, 55 and 56). Within each schema, two raster data tables are created to
+store multi-band rasters of integer point counts within voxels. Each table
+has two columns: \code{rid}: an auto-incremented integer record number;
+\code{rast} raster tiles (i.e. PostGIS storage tiles rather than LAS images).
+The first table, 'point_counts', holds rasters derived from individual LAS
+images. The PostGIS tile size for each record corresponds to the dimensions
+of the input poinit counts raster. The second table, 'point_counts_union',
+holds rasters that have been mosaiced by summing the values of overlapping
+edge pixels. The reason for holding duplicate data is to allow for deletion
+and re-import of data (e.g. to fix problems in a particular LAS tile) that
 would otherwise be difficult with just the mosaiced data.
 
-A vector data table, 'vectors.las_metadata', is created to store metadata LAS
-images including source file name, capture date and times, point counts and
-average point density. The table also has a geometry column for the bounding
-rectangle of each LAS image.
+A vector data table, 'las_metadata', is created in each schema to store
+metadata LAS images including source file name, capture date and times, point
+counts and average point density. The table also has a geometry column for
+the bounding rectangle of each LAS image.
 
-There is no field explicitly linking raster records to records in other
-tables (e.g. the LAS metadata table). Such relationships are found via
-spatial queries.
+Records in the 'las_metadata' and 'point_counts' tables are related by a
+common integer identifier (las_metadata.id = point_counts.metadata_id). No
+field explicitly links raster records in the point_counts_union table to
+those in other tables. Instead, records can be related via spatial queries.
 }
 \seealso{
 \code{\link{db_connect_postgis}}

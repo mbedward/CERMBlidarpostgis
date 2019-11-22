@@ -14,6 +14,10 @@ by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{filename}{Path or filename from which the LAS object was read.}
 }
+\value{
+The integer value of the \code{'id'} field for the newly created
+  database record.
+}
 \description{
 Import LAS tile metadata into the database
 }

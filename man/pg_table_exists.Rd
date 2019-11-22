@@ -21,7 +21,7 @@ Check if a table exists in the given database
 \examples{
 \dontrun{
 dbsettings <- db_connect_postgis(...)
-pg_table_exists(dbsettings, "rasters.point_counts_union")
+pg_table_exists(dbsettings, "lidar.point_counts_union")
 }
 
 }

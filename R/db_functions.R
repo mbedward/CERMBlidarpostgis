@@ -94,6 +94,14 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 
 #' Import a raster of point counts and its metadata into the database
 #'
+#' First, the LAS tile is read from disk and the function checks that it is
+#' located in one of the map zones supported by the database (each zone's
+#' data is stored in a separate schema). Next, point heights are normalized,
+#' any overlap between flight lines is removed, and the counts of vegetation,
+#' ground and water points are rasterized as vertical layers defined in
+#' \code{CERMBlidar::CERMBstrata}. Finally, the point count data are imported
+#' into the database along with meta-data for tile extent, point density, etc.
+#'
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{\link{db_connect_postgis}}.
 #'
@@ -108,72 +116,40 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   the LAS ground points using the \code{\link[lidR]{tin}} algorithm
 #'   with \code{\link[lidR]{lasnormalize}}.
 #'
-#' @param epsg.reproject If an integer EPSG code is provided, the point cloud
-#'   will be reprojected (if necessary) prior to deriving point counts and other
-#'   data. If \code{NULL} (default), no reprojection is done.
-#'
-#' @param counts.tablename The name of the table in which to store the raster of
-#'   point counts within vertical layers. Should be in the form
-#'   \code{'schema.table'}. Defaults to \code{'rasters.tmp_load'}.
-#'
-#' @param metadata.tablename The name of the table in which to store the summary
-#'   data and bounding polygon for the LAS image. Should be in the form
-#'   \code{'schema.table'}. Defaults to \code{'vectors.las_metadata'}.
-#'
 #' @export
 #'
 db_import_las <- function(dbsettings,
                           las.path,
-                          dem.path = NULL,
-                          epsg.reproject = NULL,
-                          counts.tablename = "rasters.tmp_load",
-                          metadata.tablename = "vectors.las_metadata") {
+                          dem.path = NULL) {
 
   message("Reading data and normalizing point heights")
 
   if (is.null(dem.path))
-    las <- prepare_tile(las.path, normalize.heights = "tin")
+    las <- CERMBlidar::prepare_tile(las.path, normalize.heights = "tin")
   else
-    las <- prepare_tile(las.path, normalize.heights = dem.path)
-
-  if (is.null(epsg.reproject)) {
-    epsg.import <- lidR::epsg(las)
-  } else {
-    message("Reprojecting point cloud")
-    las <- reproject_tile(las, epsg.reproject)
-    epsg.import <- epsg.reproject
-  }
+    las <- CERMBlidar::prepare_tile(las.path, normalize.heights = dem.path)
 
   message("Removing any flight line overlap")
-  las <- remove_flightline_overlap(las)
-
-  message("Importing point counts for strata")
-  counts <- get_stratum_counts(las, StrataCERMB)
-
-  # Load point counts for this tile into the temp table
-  pg_load_raster(dbsettings,
-                 counts,
-                 epsg = epsg.import,
-                 tablename = "rasters.tmp_load",
-                 tilew = ncol(counts),
-                 tileh = nrow(counts))
-
-  message("Merging new and existing rasters")
-  p <- dbsettings$POOL
-  pool::dbExecute(p, CERMBlidarpostgis::SQL_MergeImportRaster)
-  pool::dbExecute(p, "VACUUM ANALYZE rasters.point_counts;")
-  pool::dbExecute(p, "VACUUM ANALYZE rasters.point_counts_union;")
+  las <- CERMBlidar::remove_flightline_overlap(las)
 
   message("Importing LAS metadata")
-  db_load_tile_metadata(dbsettings,
-                        las, las.path)
+  metadata.id <- db_load_tile_metadata(dbsettings,
+                                       las, las.path)
+
+  message("Importing point counts for strata")
+  db_load_stratum_counts(dbsettings,
+                         las, metadata.id)
+
+  message("Importing building points")
+  db_load_building_points(dbsettings,
+                          las, metadata.id)
 }
 
 
 #' Check if one or more LAS files have been imported into the database
 #'
 #' When a LAS image is imported, the name of the file from which it was read is
-#' recorded in the \code{vectors.las_metadata} table of the database. This
+#' recorded in the \code{lidar.las_metadata} table of the database. This
 #' function queries that table to see which, if any, of the names provided
 #' in the \code{filenames} argument are present in that table.
 #'
@@ -295,6 +271,9 @@ pg_load_raster <- function(dbsettings,
 #'
 #' @param filename Path or filename from which the LAS object was read.
 #'
+#' @return The integer value of the \code{'id'} field for the newly created
+#'   database record.
+#'
 #' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 #'
 #' @export
@@ -302,16 +281,18 @@ pg_load_raster <- function(dbsettings,
 db_load_tile_metadata <- function(dbsettings,
                                   las, filename) {
 
-  tblname <- dbsettings$TABLE_METADATA
+  epsgcode <- lidR::epsg(las)
+  schema <- .get_schema_for_epsg(dbsettings, epsgcode)
+
+  tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
 
   if (!pg_table_exists(dbsettings, tblname)) {
     msg <- glue::glue("Table {tblname} not found in database {dbname}")
     stop(msg)
   }
 
-  epsgcode <- lidR::epsg(las)
-
   filename <- .file_from_path(filename)
+  filename <- .file_remove_extension(filename)
   scantimes <- CERMBlidar::get_scan_times(las, by = "all")
 
   pcounts <- CERMBlidar::get_class_frequencies(las)
@@ -348,7 +329,114 @@ db_load_tile_metadata <- function(dbsettings,
     ")
 
   p <- dbsettings$POOL
-  dummy <- pool::dbExecute(p, command)
+  pool::dbExecute(p, command)
+
+  # Return id value of the record just created
+  res <- pool::dbGetQuery(p, glue::glue("select id from {tblname} \\
+                                        where filename = '{filename}'"))
+
+  res$id[1]
+}
+
+
+#' Rasterize and import points counts
+#'
+#' @export
+#'
+db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
+
+  counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
+
+  schema <- .get_schema_for_epsg(dbsettings, lidR::epsg(las))
+  tmp.tblname <- paste(schema, "tmp_load", sep = ".")
+
+  # Load point counts for this tile into the temp table
+  pg_load_raster(dbsettings,
+                 counts,
+                 epsg = lidR::epsg(las),
+                 tablename = tmp.tblname,
+                 tilew = ncol(counts),
+                 tileh = nrow(counts))
+
+
+  # Merge the new and existing rasters
+  ## code to prepare `MergeImport` dataset goes here
+
+  cmd <- glue::glue("
+    -- Copy data into point_counts table
+    insert into {schema}.point_counts (meta_id, rast)
+    select {metadata.id} as meta_id, rast from {tmp.tblname};
+
+    -- Identify existing rasters that overlap the new data
+    create or replace view {schema}.overlaps as
+      select pcu.rid from
+        {schema}.point_counts_union as pcu, {schema}.tmp_load as tl
+        where st_intersects(pcu.rast, tl.rast);
+
+    -- Union overlapping rasters with new data, summing overlap values
+    create table if not exists {schema}.tmp_union (rast raster);
+
+    insert into {schema}.tmp_union
+      select ST_Union(r.rast, 'SUM') as rast from
+        (select rast from {schema}.point_counts_union
+        where rid in (select rid from {schema}.overlaps)
+        union all
+        select rast from {schema}.tmp_load) as r;
+
+
+    -- Delete overlapping rasters from main table
+    delete from {schema}.point_counts_union
+      where rid in (select rid from {schema}.overlaps);
+
+
+    -- Insert updated data
+    select DropRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
+
+    insert into {schema}.point_counts_union (rast)
+      select ST_Tile(rast, 100, 100) as raster
+      from {schema}.tmp_union;
+
+    select AddRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
+
+
+    -- Delete records from temporary import tables
+    delete from {schema}.tmp_load;
+    delete from {schema}.tmp_union; ")
+
+
+  message("Merging new and existing rasters")
+  p <- dbsettings$POOL
+  pool::dbExecute(p, cmd)
+  pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts;"))
+  pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts_union;"))
+}
+
+
+#' Import building points
+#'
+#' @export
+#'
+db_load_building_points <- function(dbsettings,
+                                    las, metadata.id) {
+
+  epsgcode <- lidR::epsg(las)
+  schema <- .get_schema_for_epsg(dbsettings, epsgcode)
+
+  p <- dbsettings$POOL
+
+  dat <- CERMBlidar::get_building_points(las)
+  if (nrow(dat) > 0) {
+    values <- glue::glue_collapse(
+      glue::glue("({metadata.id}, {dat$Z}, \\
+                  ST_GeomFromText('{sf::st_as_text(dat$geometry)}', {epsgcode}))"),
+      sep = ", "
+    )
+
+    command <- glue::glue("INSERT INTO {schema}.building_points \\
+                            (meta_id, height, geom) VALUES {values};")
+
+    pool::dbExecute(p, command)
+  }
 }
 
 
@@ -543,7 +631,7 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
 #' @examples
 #' \dontrun{
 #' dbsettings <- db_connect_postgis(...)
-#' pg_table_exists(dbsettings, "rasters.point_counts_union")
+#' pg_table_exists(dbsettings, "lidar.point_counts_union")
 #' }
 #'
 #' @export
@@ -557,6 +645,15 @@ pg_table_exists <- function(dbsettings, tablename) {
   options(o)
 
   !is.null(x)
+}
+
+
+# Retrieve the database schema that corresponds to an EPSG code
+.get_schema_for_epsg <- function(dbsettings, epsg) {
+  i <- match(epsg, dbsettings$epsg)
+  if (is.na(i)) stop("No database schema supports EPSG code ", epsg)
+
+  dbsettings$schema[i]
 }
 
 
