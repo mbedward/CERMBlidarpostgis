@@ -169,21 +169,22 @@ db_import_las <- function(dbsettings,
 #' @export
 #'
 db_lasfile_imported <- function(dbsettings, filenames) {
-  if (!pg_table_exists(dbsettings, dbsettings$TABLE_METADATA))
-    stop("No metadata table - is this a properly initialized database?")
+  p <- dbsettings$POOL
+  found <- logical(length(filenames))
 
-  sapply(filenames, function(fname) {
-    fname <- .file_remove_extension( .file_from_path(fname) )
+  fname <- .file_remove_extension( .file_from_path(filenames) )
 
-    p <- dbsettings$POOL
+  # Search all schemas
+  for (schema in dbsettings$schema) {
+    tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
+    command <- glue::glue("SELECT filename FROM {tblname};")
+    x <- pool::dbGetQuery(p, command)$filename
+    if (length(x) > 0) {
+      found <- found | sapply(fname, function(f) stringr::str_detect(x, f))
+    }
+  }
 
-    command <- glue::glue("SELECT COUNT(*) AS nrecs
-                           FROM {dbsettings$TABLE_METADATA}
-                           WHERE filename ILIKE '{fname}%'")
-
-    x <- pool::dbGetQuery(p, command)
-    x$nrecs[1] > 0
-  })
+  found
 }
 
 
