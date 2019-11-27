@@ -6,6 +6,15 @@
 \usage{
 db_summary(dbsettings)
 }
+\arguments{
+\item{dbsettings}{A named list of database connection settings returned
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
+}
+\value{
+A data frame giving, for each combination of map zone (schema),
+  map name and year, the number of LAS tiles imported.
+}
 \description{
-Summarize number of LAS tiles by map name
+Gets a summary of the number of LAS tiles stored in the database by
+map zone (schema), map name and year.
 }

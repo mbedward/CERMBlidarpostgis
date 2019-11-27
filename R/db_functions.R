@@ -621,6 +621,15 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
 
 #' Summarize number of LAS tiles by map name
 #'
+#' Gets a summary of the number of LAS tiles stored in the database by
+#' map zone (schema), map name and year.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @return A data frame giving, for each combination of map zone (schema),
+#'   map name and year, the number of LAS tiles imported.
+#'
 #' @export
 #'
 db_summary <- function(dbsettings) {
@@ -629,13 +638,15 @@ db_summary <- function(dbsettings) {
   # Search all schemas
   res <- lapply(dbsettings$schema, function(schema) {
     tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
-    command <- glue::glue("SELECT filename FROM {tblname};")
+    command <- glue::glue("SELECT filename, capture_start FROM {tblname};")
     x <- pool::dbGetQuery(p, command)
 
     if (nrow(x) > 0) {
       x <- x %>%
-        dplyr::mutate(mapname = stringr::str_extract(filename, "^[^\\d]+")) %>%
-        dplyr::group_by(mapname) %>%
+        dplyr::mutate(mapname = stringr::str_extract(filename, "^[^\\d]+"),
+                      year = lubridate::year(capture_start) ) %>%
+
+        dplyr::group_by(mapname, year) %>%
         dplyr::summarize(nlas = n())
 
       x$schema <- schema
@@ -643,7 +654,8 @@ db_summary <- function(dbsettings) {
     }
   })
 
-  dplyr::bind_rows(res)
+  dplyr::bind_rows(res) %>%
+    dplyr::arrange(schema, mapname, year)
 }
 
 
