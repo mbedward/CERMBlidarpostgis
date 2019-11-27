@@ -180,7 +180,7 @@ db_lasfile_imported <- function(dbsettings, filenames) {
     command <- glue::glue("SELECT filename FROM {tblname};")
     x <- pool::dbGetQuery(p, command)$filename
     if (length(x) > 0) {
-      found <- found | sapply(fname, function(f) stringr::str_detect(x, f))
+      found <- found | sapply(fname, function(f) tolower(f) %in% tolower(x))
     }
   }
 
@@ -615,6 +615,34 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     warning("Output GeoTIFF file was not created")
     NULL
   }
+}
+
+
+#' Summarize number of LAS tiles by map name
+#'
+#' @export
+#'
+db_summary <- function(dbsettings) {
+  p <- dbsettings$POOL
+
+  # Search all schemas
+  res <- lapply(dbsettings$schema, function(schema) {
+    tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
+    command <- glue::glue("SELECT filename FROM {tblname};")
+    x <- pool::dbGetQuery(p, command)
+
+    if (nrow(x) > 0) {
+      x <- x %>%
+        dplyr::mutate(mapname = stringr::str_extract(filename, "^[^\\d]+")) %>%
+        dplyr::group_by(mapname) %>%
+        dplyr::summarize(nlas = n())
+
+      x$schema <- schema
+      x
+    }
+  })
+
+  dplyr::bind_rows(res)
 }
 
 

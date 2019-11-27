@@ -297,7 +297,7 @@ db_connect_postgis <- function(dbname,
 #' @export
 #'
 db_disconnect_postgis <- function(dbsettings) {
-  pool::poolClose(DBsettings$POOL)
+  pool::poolClose(dbsettings$POOL)
 }
 
 
