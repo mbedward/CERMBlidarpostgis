@@ -349,13 +349,14 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
   counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
 
   schema <- .get_schema_for_epsg(dbsettings, lidR::epsg(las))
-  tmp.tblname <- paste(schema, "tmp_load", sep = ".")
+  tmpload.tblname <- paste(schema, "tmp_load", sep = ".")
+  tmpunion.tblname <- paste(schema, "tmp_union", sep = ".")
 
   # Load point counts for this tile into the temp table
   pg_load_raster(dbsettings,
                  counts,
                  epsg = lidR::epsg(las),
-                 tablename = tmp.tblname,
+                 tablename = tmpload.tblname,
                  tilew = ncol(counts),
                  tileh = nrow(counts))
 
@@ -366,23 +367,23 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
   cmd <- glue::glue("
     -- Copy data into point_counts table
     insert into {schema}.point_counts (meta_id, rast)
-    select {metadata.id} as meta_id, rast from {tmp.tblname};
+    select {metadata.id} as meta_id, rast from {tmpload.tblname};
 
     -- Identify existing rasters that overlap the new data
     create or replace view {schema}.overlaps as
       select pcu.rid from
-        {schema}.point_counts_union as pcu, {schema}.tmp_load as tl
+        {schema}.point_counts_union as pcu, {tmpload.tblname} as tl
         where st_intersects(pcu.rast, tl.rast);
 
     -- Union overlapping rasters with new data, summing overlap values
-    create table if not exists {schema}.tmp_union (rast raster);
+    create table if not exists {tmpunion.tblname} (rast raster);
 
-    insert into {schema}.tmp_union
+    insert into {tmpunion.tblname}
       select ST_Union(r.rast, 'SUM') as rast from
         (select rast from {schema}.point_counts_union
         where rid in (select rid from {schema}.overlaps)
         union all
-        select rast from {schema}.tmp_load) as r;
+        select rast from {tmpload.tblname}) as r;
 
 
     -- Delete overlapping rasters from main table
@@ -395,14 +396,14 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
 
     insert into {schema}.point_counts_union (rast)
       select ST_Tile(rast, 100, 100) as raster
-      from {schema}.tmp_union;
+      from {tmpunion.tblname};
 
     select AddRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
 
 
     -- Delete records from temporary import tables
-    delete from {schema}.tmp_load;
-    delete from {schema}.tmp_union; ")
+    delete from {tmpload.tblname}.tmp_load;
+    delete from {tmpunion.tblname}; ")
 
 
   message("Merging new and existing rasters")
