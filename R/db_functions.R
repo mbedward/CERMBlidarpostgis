@@ -105,22 +105,120 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{\link{db_connect_postgis}}.
 #'
-#' @param las.path The path and filename of the LAS source file. This can be
-#'   an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
+#' @param las.paths The paths and filenames of the LAS source files. This can
+#'   be an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
 #'
-#' @param dem.path The path and filename of a DEM raster file to use for
-#'   normalizing point heights. This can be an uncompressed (\code{.asc} or
-#'   \code{.tif}) file, or a compressed \code{.zip} file. If \code{NULL}
-#'   (default), then point heights will be normalized via triangulation of
-#'   the LAS ground points using the \code{\link[lidR]{tin}} algorithm
-#'   with \code{\link[lidR]{lasnormalize}}.
+#' @param dem.paths The paths and filenames of DEM (digital elevation model)
+#'   rasters corresponding to the LAS source files. If a vector of paths is
+#'   provided it must be the same length as \code{las.paths}. For each element
+#'   that specifies the path to a raster file (e.g. GeoTIFF) or zipped raster
+#'   file, the DEM data will read and used to normalize the point heights for
+#'   the corresponding LAS file. Where an element is \code{NA} or
+#'   an empty string, point heights for the corresponding LAS file will be
+#'   normalized using Delaunay triangulation. If this argument is set to
+#'   \code{NULL} (default), triangulation will be used for all LAS files.
+#'
+#' @param union.rasters If \code{TRUE}, raster point counts derived from the
+#'   LAS images will be loaded into both the \code{point_counts} table as a
+#'   single record and the \code{point_counts_union} table where data for
+#'   spatially adjacent, overlapping rasters are merged. If \code{FALSE}
+#'   (default), raster point counts are only loaded into the \code{point_counts}
+#'   table.
+#'
+#' @param union.batch If \code{union.rasters = TRUE}, this defines how many
+#'   rasters to load before merging data into the \code{point_counts_union}
+#'   table. The default, and minimum allowable, value is 1.
 #'
 #' @export
 #'
 db_import_las <- function(dbsettings,
+                          las.paths,
+                          dem.paths = NULL,
+                          union.rasters = FALSE,
+                          union.batch = 1) {
+
+  p <- .get_pool(dbsettings)
+
+  if (union.rasters) {
+    warning("Beware!!!",
+            "Merging of rasters is presently experimental and will probably",
+            "end in tears", immediate. = TRUE)
+
+    if (union.batch < 1) stop("The argument union.batch must be >= 1")
+  }
+
+  fn_check_exists <- function(paths, label) {
+    x <- sapply(paths, file.exists)
+    if (any(!x)) {
+      x <- x[!x]
+      if (length(x) <= 5) {
+        msg <- paste("The following", label, "files cannot be found:")
+        msg <- paste(msg, paste(names(x), collapse = "\n"), sep = "\n")
+      } else {
+        msg <- paste(length(x), label, "files cannot be found including:")
+        msg <- paste(msg, paste(head(names(x), 5), collapse = "\n"), sep = "\n")
+      }
+      stop(msg)
+    }
+  }
+
+  fn_check_exists(las.paths, "LAS")
+
+  if (!is.null(dem.paths)) {
+    if (length(las.paths) != length(dem.paths)) {
+      stop("When dem.paths is not NULL it must be the same length as las.paths")
+    }
+
+    non.empty.paths <- stringr::str_subset(dem.paths, "[^\\s]")
+    fn_check_exists(non.empty.paths, "DEM")
+
+    # Set any empty paths to NA
+    ii <- stringr::str_length(stringr::str_trim(dem.paths)) == 0
+    dem.paths[ii] <- NA
+  }
+
+  imported <- rep(0, length(las.paths))
+  n.union <- 0
+  for (i in 1:length(las.paths)) {
+    las.file <- las.paths[i]
+    if (db_lasfile_imported(dbsettings, las.file)) {
+      cat("Skipping previously imported file", .file_from_path(las.file), "\n")
+    } else {
+      dem.file <- dem.paths[i]
+      if (is.na(dem.file)) dem.file <- NULL
+
+      tryCatch({
+        .do_import_las(dbsettings, las.file, dem.file, batch.mode)
+        imported[i] <- 1
+
+        if (union.rasters) {
+          n.union <- n.union + 1
+          if (n.union >= union.batch) {
+            .do_merge_new_rasters(dbsettings, schema = NULL)
+            n.union <- 0
+          }
+        }
+      },
+      error = function(e) {
+        imported[i] <- -1
+      })
+    }
+  }
+
+  # If union-ing, process any remaining rasters
+  if (union.rasters) {
+    .do_merge_new_rasters(dbsettings, schema = NULL)
+  }
+
+  imported
+}
+
+
+.do_import_las <- function(dbsettings,
                           las.path,
-                          dem.path = NULL) {
+                          dem.path = NULL,
+                          batch.mode) {
 
   message("Reading data and normalizing point heights")
 
@@ -138,11 +236,14 @@ db_import_las <- function(dbsettings,
 
   message("Importing point counts for strata")
   db_load_stratum_counts(dbsettings,
-                         las, metadata.id)
+                         las = las,
+                         metadata.id = metadata.id,
+                         batch.mode = batch.mode)
 
   message("Importing building points")
   db_load_building_points(dbsettings,
-                          las, metadata.id)
+                          las = las,
+                          metadata.id = metadata.id)
 }
 
 
@@ -220,6 +321,9 @@ db_lasfile_imported <- function(dbsettings, filenames) {
 #'   use COPY instead of INSERT statements for speed (-Y). See
 #'   raster2pgsql documentation for details of other options.
 #'
+#' @return The integer \code{rid} value of the record(s) for the imported
+#'   raster.
+#'
 #' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
 #'
 #' @export
@@ -231,7 +335,10 @@ pg_load_raster <- function(dbsettings,
                            tilew = NULL, tileh = NULL,
                            flags = "-M -Y") {
 
+  p <- dbsettings$POOL
+
   is.tbl <- pg_table_exists(dbsettings, tablename)
+
   if (replace) {
     in.mode <- "-d"
   } else if (is.tbl) {
@@ -239,6 +346,15 @@ pg_load_raster <- function(dbsettings,
   } else {
     in.mode <- "-c"
   }
+
+  if (!replace && is.tbl) {
+    # Get current rid values for records in this table
+    cmd <- glue::glue("select rid from {tablename};")
+    existing.recs <- pool::dbGetQuery(p, cmd)
+  } else {
+    existing.recs <- data.frame(rid = integer(0))
+  }
+
 
   ftif <- tempfile(pattern = "counts", fileext = ".tif")
   fsql <- tempfile(pattern = "sql", fileext = ".txt")
@@ -260,6 +376,12 @@ pg_load_raster <- function(dbsettings,
 
   unlink(ftif)
   unlink(fsql)
+
+  # Return rid values for newly inserted raster recs
+  cmd <- glue::glue("select rid from {tablename};")
+  all.recs <- pool::dbGetQuery(p, cmd)
+
+  setdiff(all.recs$rid, existing.recs$rid)
 }
 
 
@@ -342,75 +464,124 @@ db_load_tile_metadata <- function(dbsettings,
 
 #' Rasterize and import points counts
 #'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @param las A LAS object.
+#'
+#' @param metadata.id Integer ID value of the corresponding record in the
+#'   \code{'las_metadata'} table.
+#'
+#' @param batch.mode If \code{TRUE}, merging of raster data into the
+#'   \code{'point_counts_union'} table is deferred to speed up the import of
+#'   a group of LAS files. If \code{FALSE} (default), merging is performed.
+#'
 #' @export
 #'
-db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
+db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FALSE) {
 
   counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
 
   schema <- .get_schema_for_epsg(dbsettings, lidR::epsg(las))
-  tmpload.tblname <- paste(schema, "tmp_load", sep = ".")
-  tmpunion.tblname <- paste(schema, "tmp_union", sep = ".")
 
-  # Load point counts for this tile into the temp table
-  pg_load_raster(dbsettings,
-                 counts,
-                 epsg = lidR::epsg(las),
-                 tablename = tmpload.tblname,
-                 tilew = ncol(counts),
-                 tileh = nrow(counts))
+  # Load point counts for this tile into the temp table. If the table does
+  # not exist it will be created, otherwise the new data will be appended
+  # to the existing table.
+  new.rids <- pg_load_raster(dbsettings,
+                             counts,
+                             epsg = lidR::epsg(las),
+                             tablename = glue::glue("{schema}.tmp_load"),
+                             replace = FALSE,
+                             tilew = ncol(counts),
+                             tileh = nrow(counts))
 
-
-  # Merge the new and existing rasters
-  ## code to prepare `MergeImport` dataset goes here
-
+  # Copy the new data into the point_counts table
+  new.rids.clause <- paste(new.rids, sep = ", ")
   cmd <- glue::glue("
-    -- Copy data into point_counts table
-    insert into {schema}.point_counts (meta_id, rast)
-    select {metadata.id} as meta_id, rast from {tmpload.tblname};
+      insert into {schema}.point_counts (meta_id, rast)
+        select {metadata.id} as meta_id, rast from {schema}.tmp_load
+        where rid in ({new.rids.clause});")
 
-    -- Identify existing rasters that overlap the new data
-    create or replace view {schema}.overlaps as
-      select pcu.rid from
-        {schema}.point_counts_union as pcu, {tmpload.tblname} as tl
-        where st_intersects(pcu.rast, tl.rast);
-
-    -- Union overlapping rasters with new data, summing overlap values
-    create table if not exists {tmpunion.tblname} (rast raster);
-
-    insert into {tmpunion.tblname}
-      select ST_Union(r.rast, 'SUM') as rast from
-        (select rast from {schema}.point_counts_union
-        where rid in (select rid from {schema}.overlaps)
-        union all
-        select rast from {tmpload.tblname}) as r;
-
-
-    -- Delete overlapping rasters from main table
-    delete from {schema}.point_counts_union
-      where rid in (select rid from {schema}.overlaps);
-
-
-    -- Insert updated data
-    select DropRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
-
-    insert into {schema}.point_counts_union (rast)
-      select ST_Tile(rast, 100, 100) as raster
-      from {tmpunion.tblname};
-
-    select AddRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
-
-
-    -- Delete records from temporary import tables
-    delete from {tmpload.tblname}.tmp_load;
-    delete from {tmpunion.tblname}; ")
-
-
-  message("Merging new and existing rasters")
   p <- dbsettings$POOL
   pool::dbExecute(p, cmd)
-  pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts;"))
-  pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts_union;"))
+
+  if (!batch.mode) {
+    .do_merge_new_rasters(dbsettings, schema)
+  }
+}
+
+
+# Non-exported function to merge newly imported rasters in the tmp_load
+# table into point_counts_union
+#
+.do_merge_new_rasters <- function(dbsettings, schema = NULL) {
+  if (is.null(schema)) {
+    # check all schemas
+    schemas <- dbsettings$schema
+  } else {
+    schemas <- schema
+  }
+
+  for (schema in schemas) {
+    tmp_load <- glue::glue("{schema}.tmp_load")
+    tmp_union <- glue::glue("{schema}.tmp_union")
+
+    if (pg_table_exists(dbsettings, tmp_load)) {
+      p <- dbsettings$POOL
+
+      # Check that there is some newly imported data
+      cmd <- glue::glue("select count(rast) as N from {tmp_load};")
+      x <- pool::dbGetQuery(p, cmd)
+
+      if (x$N > 0) {
+        # Merge the new and existing rasters
+        cmd <- glue::glue("
+        -- Identify existing rasters that overlap the new data
+        create or replace view {schema}.overlaps as
+          select pcu.rid from
+            {schema}.point_counts_union as pcu, {tmp_load} as tl
+            where st_intersects(pcu.rast, tl.rast);
+
+        -- Union overlapping rasters with new data, summing overlap values
+        create table if not exists {tmp_union} (rast raster);
+
+        -- In case the tmp_union table already existed, clear all rows
+        truncate table {tmp_union};
+
+        insert into {tmp_union}
+          select ST_Union(r.rast, 'SUM') as rast from
+            (select rast from {schema}.point_counts_union
+            where rid in (select rid from {schema}.overlaps)
+            union all
+            select rast from {tmp_load}) as r;
+
+        -- Delete overlapping rasters from main table
+        delete from {schema}.point_counts_union
+          where rid in (select rid from {schema}.overlaps);
+
+        -- Insert updated data
+        select DropRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
+
+        insert into {schema}.point_counts_union (rast)
+          select ST_Tile(rast, 100, 100) as raster
+          from {tmp_union};
+
+        select AddRasterConstraints('{schema}'::name, 'point_counts_union'::name, 'rast'::name);
+
+        -- Delete records from the temporary tables
+        truncate table {tmp_load};
+        truncate table {tmp_union}; ")
+
+        msg <- glue::glue("Merging new and existing rasters in {schema}")
+        message(msg)
+
+        p <- dbsettings$POOL
+        pool::dbExecute(p, cmd)
+        pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts;"))
+        pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts_union;"))
+      }
+    }
+  }
 }
 
 
@@ -700,23 +871,25 @@ pg_table_exists <- function(dbsettings, tablename) {
 
 
 # Extract filename and extension from a path
-.file_from_path <- function(path) {
-  stringr::str_extract(path, "[\\w\\.\\-]+$")
+.file_from_path <- function(paths) {
+  stringr::str_extract(paths, "[\\w\\.\\-]+$")
 }
 
 # Remove extension from filename
-.file_remove_extension <- function(filename) {
-  filename <- filename[1]
+.file_remove_extension <- function(filenames) {
   ext <- "\\.\\w+$"
 
-  if (stringr::str_detect(filename, ext))
-    pos <- stringr::str_locate(filename, ext)[1,1] - 1
-  else
-    pos <- -1
+  out <- sapply(filenames, function(fname) {
+    if (stringr::str_detect(fname, ext)) {
+      pos <- stringr::str_locate(fname, ext)[1,1] - 1
+    } else {
+      pos <- -1
+    }
+    stringr::str_sub(fname, 1, pos)
+  })
 
-  stringr::str_sub(filename, 1, pos)
+  unname(out)
 }
-
 
 # Format a time stamp to include the time zone
 # (used by db_load_tile_metadata)

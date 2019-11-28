@@ -4,22 +4,37 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(dbsettings, las.path, dem.path = NULL)
+db_import_las(dbsettings, las.paths, dem.paths = NULL,
+  union.rasters = FALSE, union.batch = 1)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
 by \code{\link{db_connect_postgis}}.}
 
-\item{las.path}{The path and filename of the LAS source file. This can be
-an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
+\item{las.paths}{The paths and filenames of the LAS source files. This can
+be an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 file.}
 
-\item{dem.path}{The path and filename of a DEM raster file to use for
-normalizing point heights. This can be an uncompressed (\code{.asc} or
-\code{.tif}) file, or a compressed \code{.zip} file. If \code{NULL}
-(default), then point heights will be normalized via triangulation of
-the LAS ground points using the \code{\link[lidR]{tin}} algorithm
-with \code{\link[lidR]{lasnormalize}}.}
+\item{dem.paths}{The paths and filenames of DEM (digital elevation model)
+rasters corresponding to the LAS source files. If a vector of paths is
+provided it must be the same length as \code{las.paths}. For each element
+that specifies the path to a raster file (e.g. GeoTIFF) or zipped raster
+file, the DEM data will read and used to normalize the point heights for
+the corresponding LAS file. Where an element is \code{NA} or
+an empty string, point heights for the corresponding LAS file will be
+normalized using Delaunay triangulation. If this argument is set to
+\code{NULL} (default), triangulation will be used for all LAS files.}
+
+\item{union.rasters}{If \code{TRUE}, raster point counts derived from the
+LAS images will be loaded into both the \code{point_counts} table as a
+single record and the \code{point_counts_union} table where data for
+spatially adjacent, overlapping rasters are merged. If \code{FALSE}
+(default), raster point counts are only loaded into the \code{point_counts}
+table.}
+
+\item{union.batch}{If \code{union.rasters = TRUE}, this defines how many
+rasters to load before merging data into the \code{point_counts_union}
+table. The default, and minimum allowable, value is 1.}
 }
 \description{
 First, the LAS tile is read from disk and the function checks that it is

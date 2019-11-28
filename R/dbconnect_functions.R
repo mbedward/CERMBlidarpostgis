@@ -311,6 +311,28 @@ db_disconnect_postgis <- function(dbsettings) {
 }
 
 
+.get_pool <- function(dbsettings, on.fail = c("error", "warning", "silent")) {
+  on.fail <- match.arg(on.fail)
+
+  p <- dbsettings$POOL
+  ok <- !is.null(p) && pool::dbIsValid(p)
+
+  if (ok) {
+    p
+  } else {
+    base::switch(on.fail,
+                 silent = NULL,
+
+                 warning = {
+                   warning("Database connection is closed or invalid", call. = FALSE)
+                   NULL
+                 },
+
+                 error = stop("Database connection is closed or invalid", call. = FALSE)
+    )
+  }
+}
+
 .check_database_installation <- function(pgpath) {
   if (!dir.exists(pgpath)) stop("Cannot find path ", pgpath)
 

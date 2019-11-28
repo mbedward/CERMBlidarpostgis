@@ -4,7 +4,20 @@
 \alias{db_load_stratum_counts}
 \title{Rasterize and import points counts}
 \usage{
-db_load_stratum_counts(dbsettings, las, metadata.id)
+db_load_stratum_counts(dbsettings, las, metadata.id, batch.mode = FALSE)
+}
+\arguments{
+\item{dbsettings}{A named list of database connection settings returned
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
+
+\item{las}{A LAS object.}
+
+\item{metadata.id}{Integer ID value of the corresponding record in the
+\code{'las_metadata'} table.}
+
+\item{batch.mode}{If \code{TRUE}, merging of raster data into the
+\code{'point_counts_union'} table is deferred to speed up the import of
+a group of LAS files. If \code{FALSE} (default), merging is performed.}
 }
 \description{
 Rasterize and import points counts

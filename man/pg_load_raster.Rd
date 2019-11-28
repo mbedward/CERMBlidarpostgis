@@ -38,6 +38,10 @@ raster2pgsql documentation for details of other options.}
 to disk prior to import. This will be stored in the 'filename' column of
 the raster table.}
 }
+\value{
+The integer \code{rid} value of the record(s) for the imported
+  raster.
+}
 \description{
 Import a raster into the database
 }
