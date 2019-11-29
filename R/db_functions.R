@@ -178,13 +178,20 @@ db_import_las <- function(dbsettings,
     dem.paths[ii] <- NA
   }
 
+
   imported <- rep(0, length(las.paths))
   n.union <- 0
-  for (i in 1:length(las.paths)) {
+  Nlas <- length(las.paths)
+
+  for (i in 1:Nlas) {
     las.file <- las.paths[i]
+
     if (db_lasfile_imported(dbsettings, las.file)) {
-      cat("Skipping previously imported file", .file_from_path(las.file), "\n")
+      message("Skipping previously imported file: ", .file_from_path(las.file))
     } else {
+      msg <- glue::glue("{i}/{Nlas} {.file_from_path(las.file)}")
+      message(msg)
+
       dem.file <- dem.paths[i]
       if (is.na(dem.file)) dem.file <- NULL
 
