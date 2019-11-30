@@ -197,7 +197,7 @@ db_import_las <- function(dbsettings,
 
       tryCatch({
         .do_import_las(dbsettings, las.file, dem.file, batch.mode)
-        imported[i] <- 1
+        imported[i] <<- 1
 
         if (union.rasters) {
           n.union <- n.union + 1
@@ -208,7 +208,7 @@ db_import_las <- function(dbsettings,
         }
       },
       error = function(e) {
-        imported[i] <- -1
+        imported[i] <<- -1
       })
     }
   }
