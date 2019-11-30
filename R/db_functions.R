@@ -833,7 +833,8 @@ db_summary <- function(dbsettings) {
   })
 
   dplyr::bind_rows(res) %>%
-    dplyr::arrange(schema, mapname, year)
+    dplyr::arrange(schema, mapname, year) %>%
+    dplyr::select(schema, mapname, year, dplyr::everything())
 }
 
 
