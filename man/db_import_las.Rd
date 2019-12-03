@@ -5,7 +5,7 @@
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
 db_import_las(dbsettings, las.paths, dem.paths = NULL,
-  union.rasters = FALSE, union.batch = 1)
+  check.overlap = TRUE, union.rasters = FALSE, union.batch = 1)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -24,6 +24,15 @@ the corresponding LAS file. Where an element is \code{NA} or
 an empty string, point heights for the corresponding LAS file will be
 normalized using Delaunay triangulation. If this argument is set to
 \code{NULL} (default), triangulation will be used for all LAS files.}
+
+\item{check.overlap}{If \code{TRUE} (default), images will be checked for
+overlap between flight lines using the function
+\code{remove_flightline_overlap} in the \code{CERMBlidar} package. If an
+image fails the overlap check (i.e. it appears to have overlap and this
+cannot be removed) it will be skipped. Setting this argument to
+\code{FALSE} disables overlap checking. This is useful for images with
+unusual configurations of flight lines that cause a false positive overlap
+check.}
 
 \item{union.rasters}{If \code{TRUE}, raster point counts derived from the
 LAS images will be loaded into both the \code{point_counts} table as a

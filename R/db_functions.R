@@ -119,6 +119,15 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   normalized using Delaunay triangulation. If this argument is set to
 #'   \code{NULL} (default), triangulation will be used for all LAS files.
 #'
+#' @param check.overlap If \code{TRUE} (default), images will be checked for
+#'   overlap between flight lines using the function
+#'   \code{remove_flightline_overlap} in the \code{CERMBlidar} package. If an
+#'   image fails the overlap check (i.e. it appears to have overlap and this
+#'   cannot be removed) it will be skipped. Setting this argument to
+#'   \code{FALSE} disables overlap checking. This is useful for images with
+#'   unusual configurations of flight lines that cause a false positive overlap
+#'   check.
+#'
 #' @param union.rasters If \code{TRUE}, raster point counts derived from the
 #'   LAS images will be loaded into both the \code{point_counts} table as a
 #'   single record and the \code{point_counts_union} table where data for
@@ -135,6 +144,7 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 db_import_las <- function(dbsettings,
                           las.paths,
                           dem.paths = NULL,
+                          check.overlap = TRUE,
                           union.rasters = FALSE,
                           union.batch = 1) {
 
@@ -196,8 +206,8 @@ db_import_las <- function(dbsettings,
       if (is.na(dem.file)) dem.file <- NULL
 
       tryCatch({
-        .do_import_las(dbsettings, las.file, dem.file, batch.mode)
-        imported[i] <<- 1
+        .do_import_las(dbsettings, las.file, dem.file, check.overlap, batch.mode)
+        imported[i] <- 1
 
         if (union.rasters) {
           n.union <- n.union + 1
@@ -208,7 +218,7 @@ db_import_las <- function(dbsettings,
         }
       },
       error = function(e) {
-        imported[i] <<- -1
+        imported[i] <- -1
       })
     }
   }
@@ -222,9 +232,12 @@ db_import_las <- function(dbsettings,
 }
 
 
+# Non-exported helper function for db_import_las
+#
 .do_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
+                          check.overlap,
                           batch.mode) {
 
   message("Reading data and normalizing point heights")
@@ -234,8 +247,12 @@ db_import_las <- function(dbsettings,
   else
     las <- CERMBlidar::prepare_tile(las.path, normalize.heights = dem.path)
 
-  message("Removing any flight line overlap")
-  las <- CERMBlidar::remove_flightline_overlap(las)
+  if (check.overlap) {
+    message("Removing any flight line overlap")
+    las <- CERMBlidar::remove_flightline_overlap(las)
+  } else {
+    message("Skipping flight line overlap check")
+  }
 
   message("Importing LAS metadata")
   metadata.id <- db_load_tile_metadata(dbsettings,
