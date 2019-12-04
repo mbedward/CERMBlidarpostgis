@@ -294,7 +294,7 @@ db_import_las <- function(dbsettings,
 #' @export
 #'
 db_lasfile_imported <- function(dbsettings, filenames) {
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   found <- logical(length(filenames))
 
   fname <- .file_remove_extension( .file_from_path(filenames) )
@@ -359,7 +359,7 @@ pg_load_raster <- function(dbsettings,
                            tilew = NULL, tileh = NULL,
                            flags = "-M -Y") {
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
 
   is.tbl <- pg_table_exists(dbsettings, tablename)
 
@@ -475,7 +475,7 @@ db_load_tile_metadata <- function(dbsettings,
     ST_GeomFromText('{wkt}', {epsgcode}) );
     ")
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   pool::dbExecute(p, command)
 
   # Return id value of the record just created
@@ -526,7 +526,7 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FA
         select {metadata.id} as meta_id, rast from {schema}.tmp_load
         where rid in ({new.rids.clause});")
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   pool::dbExecute(p, cmd)
 
   if (!batch.mode) {
@@ -551,7 +551,7 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FA
     tmp_union <- glue::glue("{schema}.tmp_union")
 
     if (pg_table_exists(dbsettings, tmp_load)) {
-      p <- dbsettings$POOL
+      p <- .get_pool(dbsettings)
 
       # Check that there is some newly imported data
       cmd <- glue::glue("select count(rast) as N from {tmp_load};")
@@ -599,7 +599,7 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FA
         msg <- glue::glue("Merging new and existing rasters in {schema}")
         message(msg)
 
-        p <- dbsettings$POOL
+        p <- .get_pool(dbsettings)
         pool::dbExecute(p, cmd)
         pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts;"))
         pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts_union;"))
@@ -619,7 +619,7 @@ db_load_building_points <- function(dbsettings,
   epsgcode <- lidR::epsg(las)
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
 
   dat <- CERMBlidar::get_building_points(las)
   if (nrow(dat) > 0) {
@@ -708,7 +708,7 @@ db_get_las_bounds <- function(dbsettings,
                         FROM {dbsettings$TABLE_METADATA}
                         {where.cond};")
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   res <- pool::dbGetQuery(p, command)
 
   if (nrow(res) > 0) {
@@ -798,7 +798,7 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     DROP TABLE tmp_export_rast;
   ")
 
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   pool::dbBegin(p)
   pool::dbExecute(p, command)
   pool::dbCommit(p)
@@ -828,32 +828,104 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
 #' @export
 #'
 db_summary <- function(dbsettings) {
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
 
   # Search all schemas
   res <- lapply(dbsettings$schema, function(schema) {
-    tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
-    command <- glue::glue("SELECT filename, capture_start FROM {tblname};")
-    x <- pool::dbGetQuery(p, command)
+    command <- glue::glue("select '{schema}' as zone, mapname, year, count(id) as ntiles from (
+                          select substring(filename, '^[^\\d]+') as mapname,
+                            extract (year from capture_start) as year,
+                            id from {schema}.{dbsettings$TABLE_METADATA}) as foo
+                          group by (mapname, year) order by (mapname, year);")
 
-    if (nrow(x) > 0) {
-      x <- x %>%
-        dplyr::mutate(mapname = stringr::str_extract(filename, "^[^\\d]+"),
-                      year = lubridate::year(capture_start) ) %>%
-
-        dplyr::group_by(mapname, year) %>%
-        dplyr::summarize(nlas = n())
-
-      x$schema <- schema
-      x
-    }
+    pool::dbGetQuery(p, command)
   })
 
-  dplyr::bind_rows(res) %>%
-    dplyr::arrange(schema, mapname, year) %>%
-    dplyr::select(schema, mapname, year, dplyr::everything())
+  dplyr::bind_rows(res)
 }
 
+
+#' Submit an arbitrary SQL query
+#'
+#' This is a short-cut function that retrieves the database connection object from a
+#' \code{dbsettings} list, submits an SQL query, and returns the results as a data frame.
+#' It is an alternative to composing queries as \code{dplyr} pipelines.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @param query SQL query as a character string or similar (e.g. \code{glue}
+#'   string).
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' Sys.setenv(PGPASSWORD = "secret")
+#' DBSettings <- db_connect_postgis("cermb_lidar")
+#'
+#' # Simple query - count records in one of the tables
+#' res <- db_get_query(DBSettings, "select count(*) as n from mgazone56.point_counts")
+#'
+#' # A more complex query using the glue package to compose the SQL string
+#' library(glue)
+#'
+#' mapnames <- c("Dorrigo", "Drake", "Gosford")
+#'
+#' values <- glue_collapse(glue("'{mapnames}'"), sep = ", ")
+#'
+#' query <- glue::glue("select id, mapname, capture_start from
+#'                        (select id, substring(filename, '^[^\\d]+') as mapname, capture_start
+#'                         from mgazone56.las_metadata) as foo
+#'                      where mapname in ({values});")
+#'
+#' res <- db_get_query(DBSettings, query)
+#' }
+#'
+db_get_query <- function(dbsettings, query) {
+  if (!stringr::str_detect(query, "\\;\\s*$")) query <- paste0(query, ";")
+  p <- .get_pool(dbsettings)
+  pool::dbGetQuery(p, query)
+}
+
+
+#' Check for any records in metadata tables with no associated point count rasters
+#'
+#' Each record in a \code{point_counts} table, which contains rasters of point
+#' counts for vertical strata, is linked to a parent record in the
+#' \code{las_metadata} table within the same schema (e.g. 'mgazone56') via the
+#' relation \code{point_counts.meta_id = las_metadata.id}. The database will not
+#' allow a point counts record without an associated metadata record, but it
+#' will allow a metadata record without any point counts records. Usually, this
+#' will indicate that some problem occurred during import. This function checks
+#' for any such childless metadata records.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @param schema A character vector giving the names of one or more schemas
+#'   (e.g. "mgazone56") to check. If \code{NULL} (default), all schemas are
+#'   checked.
+#'
+#' @return A data frame. If childless meta-data records were found, the schema,
+#'   integer id and filename will be listed for each. If no such records were
+#'   found the data frame will have zero rows and columns.
+#'
+#' @export
+#'
+db_check_childless_metadata <- function(dbsettings, schema = NULL) {
+  if (is.null(schema)) schema <- dbsettings$schema
+
+  res <- lapply(schema, function(s) {
+    cmd <- glue::glue("select '{s}' as schema, id, filename from {s}.{tbl.meta} \\
+                      where id NOT IN (
+                        select meta_id from {s}.{tbl.pcounts})")
+
+    db_get_query(dbsettings, cmd)
+  })
+
+  dplyr::bind_rows(res)
+}
 
 #' Check if a table exists in the given database
 #'
@@ -875,7 +947,7 @@ db_summary <- function(dbsettings) {
 #' @export
 #'
 pg_table_exists <- function(dbsettings, tablename) {
-  p <- dbsettings$POOL
+  p <- .get_pool(dbsettings)
   command <- glue::glue("select count(*) as n from {tablename};")
 
   o <- options(warn = -1, show.error.messages = FALSE)
