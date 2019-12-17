@@ -109,7 +109,7 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   be an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 #'   file.
 #'
-#' @param dem.paths The paths and filenames of DEM (digital elevation model)
+#' @param dem.paths The paths and file names of DEM (digital elevation model)
 #'   rasters corresponding to the LAS source files. If a vector of paths is
 #'   provided it must be the same length as \code{las.paths}. For each element
 #'   that specifies the path to a raster file (e.g. GeoTIFF) or zipped raster
@@ -118,6 +118,12 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   an empty string, point heights for the corresponding LAS file will be
 #'   normalized using Delaunay triangulation. If this argument is set to
 #'   \code{NULL} (default), triangulation will be used for all LAS files.
+#'
+#' @param mapnames Specifies the mapsheet names to store for the imported
+#'   LAS tiles. If \code{NULL} (default), mapsheet names are extracted from the
+#'   leading alphabetic portion of the LAS file names. Alternatively it can be
+#'   a character vector of either length 1 (same name for all LAS tiles) or
+#'   length equal to that of \code{las.paths}.
 #'
 #' @param check.overlap If \code{TRUE} (default), images will be checked for
 #'   overlap between flight lines using the function
@@ -144,6 +150,7 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 db_import_las <- function(dbsettings,
                           las.paths,
                           dem.paths = NULL,
+                          mapnames = NULL,
                           check.overlap = TRUE,
                           union.rasters = FALSE,
                           union.batch = 1) {
@@ -205,8 +212,16 @@ db_import_las <- function(dbsettings,
       dem.file <- dem.paths[i]
       if (is.na(dem.file)) dem.file <- NULL
 
+      if (is.null(mapnames)) {
+        mapname <- stringr::str_extract(.file_from_path(las.file), "^[A-Za-z]+")
+      } else if (length(mapnames) == 1) {
+        mapname <- mapnames
+      } else {
+        mapname <- mapnames[i]
+      }
+
       tryCatch({
-        .do_import_las(dbsettings, las.file, dem.file, check.overlap, batch.mode)
+        .do_import_las(dbsettings, las.file, dem.file, mapname, check.overlap, batch.mode)
         imported[i] <- 1
 
         if (union.rasters) {
@@ -237,6 +252,7 @@ db_import_las <- function(dbsettings,
 .do_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
+                          mapname,
                           check.overlap,
                           batch.mode) {
 
@@ -256,7 +272,7 @@ db_import_las <- function(dbsettings,
 
   message("Importing LAS metadata")
   metadata.id <- db_load_tile_metadata(dbsettings,
-                                       las, las.path)
+                                       las, las.path, mapname)
 
   message("Importing point counts for strata")
   db_load_stratum_counts(dbsettings,
@@ -418,6 +434,9 @@ pg_load_raster <- function(dbsettings,
 #'
 #' @param filename Path or filename from which the LAS object was read.
 #'
+#' @param mapname Name of the map sheet (assumed to be 100k topographic map) to
+#'   assign to this LAS tile.
+#'
 #' @return The integer value of the \code{'id'} field for the newly created
 #'   database record.
 #'
@@ -426,7 +445,7 @@ pg_load_raster <- function(dbsettings,
 #' @export
 #'
 db_load_tile_metadata <- function(dbsettings,
-                                  las, filename) {
+                                  las, filename, mapname) {
 
   epsgcode <- lidR::epsg(las)
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
@@ -453,14 +472,15 @@ db_load_tile_metadata <- function(dbsettings,
 
   command <- glue::glue(
     "insert into {tblname} \\
-    (filename, capture_start, capture_end, \\
+    (filename, mapname, capture_start, capture_end, \\
     area, \\
     point_density, \\
     npts_ground, npts_veg, npts_building, npts_water, npts_other, npts_total, \\
     nflightlines,
-    bounds) \\
+    bounds)
     values(\\
     '{filename}', \\
+    '{mapname}', \\
     '{.tformat(scantimes[1,1])}', \\
     '{.tformat(scantimes[1,2])}', \\
     {area}, \\

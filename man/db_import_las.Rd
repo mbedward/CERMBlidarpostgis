@@ -4,7 +4,7 @@
 \alias{db_import_las}
 \title{Import a raster of point counts and its metadata into the database}
 \usage{
-db_import_las(dbsettings, las.paths, dem.paths = NULL,
+db_import_las(dbsettings, las.paths, dem.paths = NULL, mapnames = NULL,
   check.overlap = TRUE, union.rasters = FALSE, union.batch = 1)
 }
 \arguments{
@@ -15,7 +15,7 @@ by \code{\link{db_connect_postgis}}.}
 be an uncompressed (\code{.las}) or compressed \code{.laz} or \code{.zip}
 file.}
 
-\item{dem.paths}{The paths and filenames of DEM (digital elevation model)
+\item{dem.paths}{The paths and file names of DEM (digital elevation model)
 rasters corresponding to the LAS source files. If a vector of paths is
 provided it must be the same length as \code{las.paths}. For each element
 that specifies the path to a raster file (e.g. GeoTIFF) or zipped raster
@@ -24,6 +24,12 @@ the corresponding LAS file. Where an element is \code{NA} or
 an empty string, point heights for the corresponding LAS file will be
 normalized using Delaunay triangulation. If this argument is set to
 \code{NULL} (default), triangulation will be used for all LAS files.}
+
+\item{mapnames}{Specifies the mapsheet names to store for the imported
+LAS tiles. If \code{NULL} (default), mapsheet names are extracted from the
+leading alphabetic portion of the LAS file names. Alternatively it can be
+a character vector of either length 1 (same name for all LAS tiles) or
+length equal to that of \code{las.paths}.}
 
 \item{check.overlap}{If \code{TRUE} (default), images will be checked for
 overlap between flight lines using the function

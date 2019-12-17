@@ -137,7 +137,8 @@ db_create_postgis <- function(dbname,
       npts_other integer NOT NULL, \\
       npts_total integer NOT NULL, \\
       nflightlines integer NOT NULL, \\
-      bounds geometry(Polygon, {epsg}) NOT NULL);" )
+      bounds geometry(Polygon, {epsg}) NOT NULL, \\
+      mapname text NOT NULL);" )
 
     pool::dbExecute(p, command)
 

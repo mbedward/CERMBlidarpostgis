@@ -4,7 +4,7 @@
 \alias{db_load_tile_metadata}
 \title{Import LAS tile metadata into the database}
 \usage{
-db_load_tile_metadata(dbsettings, las, filename)
+db_load_tile_metadata(dbsettings, las, filename, mapname)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -13,6 +13,9 @@ by \code{db_connect_postgis} or \code{db_create_postgis}.}
 \item{las}{A LAS object.}
 
 \item{filename}{Path or filename from which the LAS object was read.}
+
+\item{mapname}{Name of the map sheet (assumed to be 100k topographic map) to
+assign to this LAS tile.}
 }
 \value{
 The integer value of the \code{'id'} field for the newly created
