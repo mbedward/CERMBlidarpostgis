@@ -210,7 +210,9 @@ db_import_las <- function(dbsettings,
       message(msg)
 
       dem.file <- dem.paths[i]
-      if (is.na(dem.file)) dem.file <- NULL
+      if (!is.null(dem.file)) {
+        if (is.na(dem.file)) dem.file <- NULL
+      }
 
       if (is.null(mapnames)) {
         mapname <- stringr::str_extract(.file_from_path(las.file), "^[A-Za-z]+")
