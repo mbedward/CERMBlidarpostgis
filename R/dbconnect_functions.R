@@ -156,7 +156,7 @@ db_create_postgis <- function(dbname,
 
     # Table for unmerged LAS tile point counts
     command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                        {schema}.{tblnames$TABLE_COUNTS_RAW} \\
+                        {schema}.{tblnames$TABLE_COUNTS_LAS} \\
                         (rid serial primary key, \\
                          meta_id integer references {schema}.las_metadata(id),
                          rast raster);")
@@ -304,7 +304,7 @@ db_disconnect_postgis <- function(dbsettings) {
 
 .table_names <- function() {
   list(
-    'TABLE_COUNTS_RAW' = "point_counts",
+    'TABLE_COUNTS_LAS' = "point_counts",
     'TABLE_COUNTS_UNION' = "point_counts_union",
     'TABLE_METADATA' = "las_metadata",
     'TABLE_BUILDINGS' = "building_points"

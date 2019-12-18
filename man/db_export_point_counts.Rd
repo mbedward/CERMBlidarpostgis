@@ -4,7 +4,7 @@
 \alias{db_export_point_counts}
 \title{Export raster point count data that intersects with one or more features}
 \usage{
-db_export_point_counts(dbsettings, geom, outpath, default.epsg = 3308)
+db_export_point_counts(dbsettings, geom, outpath, default.epsg = NULL)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -16,8 +16,9 @@ Y min,max.}
 
 \item{outpath}{A path and filename for the output GeoTIFF file.}
 
-\item{default.epsg}{EPSG code to assume for the features if none has been
-assigned (e.g. with \code{sf::st_crs}).}
+\item{default.epsg}{EPSG code to assume for the query feature(s). Ignored if
+the features are \code{sf} or \code{raster::Extent} objects with a coordinate
+reference system defined.}
 }
 \value{
 A raster stack linked to the exported GeoTIFF file.
@@ -27,6 +28,14 @@ This function takes a set of features (points, lines, polygons or an extent
 in the form of a matrix or raster Extent object), identifies the raster tiles
 of point count data that the features intersect with, and exports these to a
 GeoTIFF file.
+}
+\note{
+Presently, this function takes raster data from the non-unioned
+point counts table where each record corresponds to an imported LAS file.
+The data are then unioned before export to allow for overlapping LAS tile
+edges. The original intention was to have a second raster point counts
+table of pre-unioned data, but this has proved difficult to implement
+efficiently and reliably.
 }
 \seealso{
 \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}

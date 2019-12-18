@@ -755,6 +755,13 @@ db_get_las_bounds <- function(dbsettings,
 #' of point count data that the features intersect with, and exports these to a
 #' GeoTIFF file.
 #'
+#' @note Presently, this function takes raster data from the non-unioned
+#' point counts table where each record corresponds to an imported LAS file.
+#' The data are then unioned before export to allow for overlapping LAS tile
+#' edges. The original intention was to have a second raster point counts
+#' table of pre-unioned data, but this has proved difficult to implement
+#' efficiently and reliably.
+#'
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
@@ -764,8 +771,9 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @param outpath A path and filename for the output GeoTIFF file.
 #'
-#' @param default.epsg EPSG code to assume for the features if none has been
-#'   assigned (e.g. with \code{sf::st_crs}).
+#' @param default.epsg EPSG code to assume for the query feature(s). Ignored if
+#'   the features are \code{sf} or \code{raster::Extent} objects with a coordinate
+#'   reference system defined.
 #'
 #' @return A raster stack linked to the exported GeoTIFF file.
 #'
@@ -774,17 +782,37 @@ db_get_las_bounds <- function(dbsettings,
 #' @export
 #'
 db_export_point_counts <- function(dbsettings, geom, outpath,
-                                default.epsg = 3308) {
+                                   default.epsg = NULL) {
 
   if (inherits(geom, what = c("sfc", "sfg")))
     g <- geom
+
   else if (inherits(geom, what = "sf")) {
     isgeom <- sapply(geom, inherits, what = "sfc")
     if (!sum(isgeom) == 1)
       stop("Failed to find geometry column in sf data frame")
     g <- geom[, isgeom, drop=TRUE]
-  } else if (inherits(geom, what = c("matrix", "Extent"))) {
+
+  } else if (inherits(geom, what = "Extent")) {
+    # raster::Extent object
     g <- sf::st_sfc(.extentToPolygon(geom))
+
+    if (is.na(raster::crs(geom))) {
+      if (is.null(default.epsg))
+        stop("EPSG code must be provided for an Extent object without ",
+             "an attached CRS")
+
+      sf::st_crs(g) <- default.epsg
+    } else {
+      sf::st_crs(g) <- raster::crs(geom)
+    }
+
+  } else if (inherits(geom, what = "matrix")) {
+    if (is.null(default.epsg))
+      stop("EPSG code must be provided for a matrix")
+
+    g <- sf::st_sfc(.extentToPolygon(geom))
+    sf::st_crs(g) <- default.epsg
   }
 
   g.crs <- sf::st_crs(g)
@@ -806,9 +834,9 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
       VALUES {g.values};
     --------
     CREATE TEMPORARY TABLE tmp_export_rast AS
-      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(u.rast), 'GTiff')) AS loid
-      FROM {dbsettings$TABLE_COUNTS_UNION} AS u, tmp_features as f
-      WHERE ST_Intersects(u.rast, f.feature);
+      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(pc.rast), 'GTiff')) AS loid
+      FROM {dbsettings$TABLE_COUNTS_LAS} AS pc, tmp_features as f
+      WHERE ST_Intersects(pc.rast, f.feature);
     --------
     SELECT lo_export(loid, '{outpath}')
       FROM tmp_export_rast;
@@ -939,9 +967,10 @@ db_check_childless_metadata <- function(dbsettings, schema = NULL) {
   if (is.null(schema)) schema <- dbsettings$schema
 
   res <- lapply(schema, function(s) {
-    cmd <- glue::glue("select '{s}' as schema, id, filename from {s}.{tbl.meta} \\
+    cmd <- glue::glue("select '{s}' as schema, id, filename from \\
+                      {s}.{dbsettings$TABLE_METADATA} \\
                       where id NOT IN (
-                        select meta_id from {s}.{tbl.pcounts})")
+                      select meta_id from {s}.{dbsettings$TABLE_COUNTS_LAS})")
 
     db_get_query(dbsettings, cmd)
   })
