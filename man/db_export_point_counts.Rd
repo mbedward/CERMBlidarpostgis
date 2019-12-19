@@ -4,7 +4,8 @@
 \alias{db_export_point_counts}
 \title{Export raster point count data that intersects with one or more features}
 \usage{
-db_export_point_counts(dbsettings, geom, outpath, default.epsg = NULL)
+db_export_point_counts(dbsettings, geom, outpath, time.interval = NULL,
+  default.epsg = NULL)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -15,6 +16,11 @@ or a 2x2 matrix where the first row is X min,max and the second row is
 Y min,max.}
 
 \item{outpath}{A path and filename for the output GeoTIFF file.}
+
+\item{time.interval}{If provided, only export data for rasters where the
+scan time (capture_start and capture_end fields) overlap the given interval.
+Can be provided as either a vector of one or more years as four-digit integers,
+or a \code{lubridate::interval} object.}
 
 \item{default.epsg}{EPSG code to assume for the query feature(s). Ignored if
 the features are \code{sf} or \code{raster::Extent} objects with a coordinate

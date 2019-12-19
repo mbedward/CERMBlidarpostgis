@@ -771,6 +771,11 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @param outpath A path and filename for the output GeoTIFF file.
 #'
+#' @param time.interval If provided, only export data for rasters where the
+#'   scan time (capture_start and capture_end fields) overlap the given interval.
+#'   Can be provided as either a vector of one or more years as four-digit integers,
+#'   or a \code{lubridate::interval} object.
+#'
 #' @param default.epsg EPSG code to assume for the query feature(s). Ignored if
 #'   the features are \code{sf} or \code{raster::Extent} objects with a coordinate
 #'   reference system defined.
@@ -782,6 +787,7 @@ db_get_las_bounds <- function(dbsettings,
 #' @export
 #'
 db_export_point_counts <- function(dbsettings, geom, outpath,
+                                   time.interval = NULL,
                                    default.epsg = NULL) {
 
   if (inherits(geom, what = c("sfc", "sfg")))
@@ -819,24 +825,103 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
   if (!is.na(g.crs)) epsg <- g.crs$epsg
   else epsg <- default.epsg
 
+  # Determine schema based on EPSG
+  schema.epsgs <- 28300 + as.integer(stringr::str_extract(dbsettings$schema, "\\d{2}$"))
+  i <- match(epsg, schema.epsgs)
+  if (is.na(i)) {
+    stop("No database schema corresponds to feature EPSG code ", epsg)
+  }
+  schema <- dbsettings$schema[i]
+
+
+  if (is.null(time.interval)) {
+    time.interval.type <- "none"
+  } else if (lubridate::is.interval(time.interval)) {
+    time.interval.type <- "interval"
+  }
+  else if(is.vector(time.interval) &&
+          is.numeric(time.interval) &&
+          all(stringr::str_detect(time.interval, "^\\d{4}")) ) {
+    time.interval.type <- "years"
+  } else {
+    stop("time.interval must be either a lubridate interval object or ",
+         "a vector of four-digit year numbers")
+  }
+
+
+  p <- .get_pool(dbsettings)
+  con <- pool::poolCheckout(p)
+  pool::dbBegin(con)
+
   g.values <- sapply(g, function(gg) {
     glue::glue("ST_GeomFromText('{sf::st_as_text(gg)}', {epsg})")
   })
 
   g.values <- paste( paste("(", g.values, ")"), collapse = ",")
 
+  # Load query features into a temp table
   command <- glue::glue("
     CREATE TEMPORARY TABLE tmp_features (
       feature geometry(GEOMETRY, {epsg}) NOT NULL
     );
     --------
     INSERT INTO tmp_features (feature)
-      VALUES {g.values};
-    --------
+      VALUES {g.values};")
+
+  pool::dbExecute(con, command)
+
+  # Identify rasters that intersect with the features
+  command <- glue::glue("
+    SELECT pc.rid, pc.meta_id FROM
+      {schema}.{dbsettings$TABLE_COUNTS_LAS} AS pc, tmp_features as f
+      WHERE ST_Intersects(pc.rast, f.feature)")
+
+  rasterids <- pool::dbGetQuery(con, command)
+
+  if (nrow(rasterids) == 0) {
+    pool::dbRollback(con)
+    pool::poolReturn(con)
+    message("No point count rasters for these features")
+    return(NULL)
+  }
+
+  # If a time interval is specified, find the subset of rasters that
+  # falls within the interval
+  if (time.interval.type != "none") {
+    id.vals <- paste(rasterids$meta_id, collapse = ", ")
+    command <- glue::glue("
+        SELECT id, capture_start, capture_end FROM {schema}.{dbsettings$TABLE_METADATA}
+          WHERE id IN ({id.vals});")
+
+    rastertimes <- pool::dbGetQuery(con, command)
+
+    if (time.interval.type == "years") {
+      ii <- lubridate::year(rastertimes$capture_start) %in% time.interval |
+        lubridate::year(rastertimes$capture_end) %in% time.interval
+    }
+    if (time.interval.type == "interval") {
+      ii <- lubridate::`%within%`(rastertimes$capture_start, time.interval) |
+        lubridate::`%within%`(rastertimes$capture_end, time.interval)
+    }
+
+    if (!any(ii)) {
+      message("No point count rasters within the time interval for these features")
+      pool::dbRollback(con)
+      pool::poolReturn(con)
+      return(NULL)
+    }
+
+    rasterids <- rasterids[ii, ]
+  }
+
+
+  rids <- paste(rasterids$rid, collapse = ", ")
+
+  command <- glue::glue("
     CREATE TEMPORARY TABLE tmp_export_rast AS
-      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(pc.rast), 'GTiff')) AS loid
-      FROM {dbsettings$TABLE_COUNTS_LAS} AS pc, tmp_features as f
-      WHERE ST_Intersects(pc.rast, f.feature);
+      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast), 'GTiff')) AS loid
+      FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
+      WHERE rid IN ({rids});
     --------
     SELECT lo_export(loid, '{outpath}')
       FROM tmp_export_rast;
@@ -848,10 +933,9 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
     DROP TABLE tmp_export_rast;
   ")
 
-  p <- .get_pool(dbsettings)
-  pool::dbBegin(p)
-  pool::dbExecute(p, command)
-  pool::dbCommit(p)
+  pool::dbExecute(con, command)
+  pool::dbCommit(con)
+  pool::poolReturn(con)
 
   if (file.exists(outpath)) {
     r <- raster::stack(outpath)
