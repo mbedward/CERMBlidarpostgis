@@ -238,7 +238,7 @@ db_import_las <- function(dbsettings,
         }
       },
       error = function(e) {
-        imported[i] <- -1
+        imported[i] <<- -1
       })
     }
   }
