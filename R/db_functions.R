@@ -223,7 +223,7 @@ db_import_las <- function(dbsettings,
       }
 
       tryCatch({
-        .do_import_las(dbsettings, las.file, dem.file, mapname, check.overlap, batch.mode)
+        .do_import_las(dbsettings, las.file, dem.file, mapname, check.overlap)
         imported[i] <- 1
 
         if (union.rasters) {
@@ -232,6 +232,9 @@ db_import_las <- function(dbsettings,
             .do_merge_new_rasters(dbsettings, schema = NULL)
             n.union <- 0
           }
+        } else {
+          # Not merging rasters so clean out tmp_load tables
+          .do_delete_tmp_tables(dbsettings, schema = NULL);
         }
       },
       error = function(e) {
@@ -255,8 +258,7 @@ db_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
                           mapname,
-                          check.overlap,
-                          batch.mode) {
+                          check.overlap) {
 
   message("Reading data and normalizing point heights")
 
@@ -279,8 +281,7 @@ db_import_las <- function(dbsettings,
   message("Importing point counts for strata")
   db_load_stratum_counts(dbsettings,
                          las = las,
-                         metadata.id = metadata.id,
-                         batch.mode = batch.mode)
+                         metadata.id = metadata.id)
 
   message("Importing building points")
   db_load_building_points(dbsettings,
@@ -449,7 +450,8 @@ pg_load_raster <- function(dbsettings,
 db_load_tile_metadata <- function(dbsettings,
                                   las, filename, mapname) {
 
-  epsgcode <- lidR::epsg(las)
+  bounds <- CERMBlidar::get_las_bounds(las, "sf")
+  epsgcode <- sf::st_crs(bounds)$epsg
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
 
   tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
@@ -468,7 +470,6 @@ db_load_tile_metadata <- function(dbsettings,
 
   nflightlines <- length(unique(las@data$flightlineID))
 
-  bounds <- CERMBlidar::get_las_bounds(las, "sf")
   wkt <- sf::st_as_text(bounds)
   area <- sf::st_area(bounds)
 
@@ -518,13 +519,9 @@ db_load_tile_metadata <- function(dbsettings,
 #' @param metadata.id Integer ID value of the corresponding record in the
 #'   \code{'las_metadata'} table.
 #'
-#' @param batch.mode If \code{TRUE}, merging of raster data into the
-#'   \code{'point_counts_union'} table is deferred to speed up the import of
-#'   a group of LAS files. If \code{FALSE} (default), merging is performed.
-#'
 #' @export
 #'
-db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FALSE) {
+db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
 
   counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
 
@@ -550,10 +547,6 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FA
 
   p <- .get_pool(dbsettings)
   pool::dbExecute(p, cmd)
-
-  if (!batch.mode) {
-    .do_merge_new_rasters(dbsettings, schema)
-  }
 }
 
 
@@ -627,6 +620,27 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id, batch.mode = FA
         pool::dbExecute(p, glue::glue("VACUUM ANALYZE {schema}.point_counts_union;"))
       }
     }
+  }
+}
+
+
+.do_delete_tmp_tables <- function(dbsettings, schema = NULL) {
+  if (is.null(schema)) {
+    # check all schemas
+    schemas <- dbsettings$schema
+  } else {
+    schemas <- schema
+  }
+
+  for (schema in schemas) {
+    tmp_load <- glue::glue("{schema}.tmp_load")
+    tmp_union <- glue::glue("{schema}.tmp_union")
+
+    command <- glue::glue("drop table if exists {tmp_load};
+                           drop table if exists {tmp_union};")
+
+    p <- .get_pool(dbsettings)
+    pool::dbExecute(p, command)
   }
 }
 
