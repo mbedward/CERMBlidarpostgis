@@ -353,10 +353,10 @@ db_disconnect_postgis <- function(dbsettings) {
 }
 
 
-.check_database_password <- function(password) {
+.check_database_password <- function(password = NULL) {
   if (is.null(password)) {
-    password <- Sys.getenv("PGPASSWORD")
-    if (password == "") {
+    password <- Sys.getenv("PGPASSWORD", unset = NA)
+    if (is.na(password)) {
       stop("Database password not set. Provide it as an argument\n",
            "or set the environment variable PGPASSWORD")
     }

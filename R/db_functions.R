@@ -450,6 +450,8 @@ pg_load_raster <- function(dbsettings,
 db_load_tile_metadata <- function(dbsettings,
                                   las, filename, mapname) {
 
+  .check_database_password()
+
   bounds <- CERMBlidar::get_las_bounds(las, "sf")
   epsgcode <- sf::st_crs(bounds)$epsg
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
@@ -522,6 +524,8 @@ db_load_tile_metadata <- function(dbsettings,
 #' @export
 #'
 db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
+
+  .check_database_password()
 
   counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
 
@@ -651,6 +655,8 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
 #'
 db_load_building_points <- function(dbsettings,
                                     las, metadata.id) {
+
+  .check_database_password()
 
   epsgcode <- lidR::epsg(las)
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
