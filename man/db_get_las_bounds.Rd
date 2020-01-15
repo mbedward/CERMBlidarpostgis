@@ -4,8 +4,12 @@
 \alias{db_get_las_bounds}
 \title{Query bounding polygons of imported LAS images}
 \usage{
-db_get_las_bounds(dbsettings, file.pattern = NULL,
-  capture.start = NULL, capture.end = NULL)
+db_get_las_bounds(
+  dbsettings,
+  file.pattern = NULL,
+  capture.start = NULL,
+  capture.end = NULL
+)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned

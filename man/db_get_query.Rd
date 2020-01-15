@@ -34,7 +34,7 @@ mapnames <- c("Dorrigo", "Drake", "Gosford")
 values <- glue_collapse(glue("'{mapnames}'"), sep = ", ")
 
 query <- glue::glue("select id, mapname, capture_start from
-                       (select id, substring(filename, '^[^\\\\d]+') as mapname, capture_start
+                       (select id, substring(filename, '^[^\\d]+') as mapname, capture_start
                         from mgazone56.las_metadata) as foo
                      where mapname in ({values});")
 

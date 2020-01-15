@@ -4,8 +4,16 @@
 \alias{pg_load_raster}
 \title{Import a raster into the database}
 \usage{
-pg_load_raster(dbsettings, r, epsg, tablename, replace = FALSE,
-  tilew = NULL, tileh = NULL, flags = "-M -Y")
+pg_load_raster(
+  dbsettings,
+  r,
+  epsg,
+  tablename,
+  replace = FALSE,
+  tilew = NULL,
+  tileh = NULL,
+  flags = "-M -Y"
+)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned

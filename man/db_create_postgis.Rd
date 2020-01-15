@@ -4,9 +4,15 @@
 \alias{db_create_postgis}
 \title{Create a new PostGIS database to hold data derived from LIDAR images}
 \usage{
-db_create_postgis(dbname, mga.zones = c(54, 55, 56),
-  host = "localhost", port = 5432, username = "postgres",
-  password = NULL, pgpath = "c:/Program Files/PostgreSQL/11/bin")
+db_create_postgis(
+  dbname,
+  mga.zones = c(54, 55, 56),
+  host = "localhost",
+  port = 5432,
+  username = "postgres",
+  password = NULL,
+  pgpath = "c:/Program Files/PostgreSQL/11/bin"
+)
 }
 \arguments{
 \item{dbname}{Database name.}

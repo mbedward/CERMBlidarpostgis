@@ -4,9 +4,14 @@
 \alias{db_connect_postgis}
 \title{Connect to a PostGIS database holding data derived from LIDAR images}
 \usage{
-db_connect_postgis(dbname, host = "localhost", port = 5432,
-  username = "postgres", password = NULL,
-  pgpath = "c:/Program Files/PostgreSQL/11/bin")
+db_connect_postgis(
+  dbname,
+  host = "localhost",
+  port = 5432,
+  username = "postgres",
+  password = NULL,
+  pgpath = "c:/Program Files/PostgreSQL/11/bin"
+)
 }
 \arguments{
 \item{dbname}{Database name.}

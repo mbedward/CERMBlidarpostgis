@@ -95,12 +95,31 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #' Import a raster of point counts and its metadata into the database
 #'
 #' First, the LAS tile is read from disk and the function checks that it is
-#' located in one of the map zones supported by the database (each zone's
-#' data is stored in a separate schema). Next, point heights are normalized,
-#' any overlap between flight lines is removed, and the counts of vegetation,
-#' ground and water points are rasterized as vertical layers defined in
-#' \code{CERMBlidar::CERMBstrata}. Finally, the point count data are imported
-#' into the database along with meta-data for tile extent, point density, etc.
+#' located in one of the map zones supported by the database (each zone's data
+#' is stored in a separate schema). Next, point heights are normalized, any
+#' overlap between flight lines is removed, and the counts of vegetation, ground
+#' and water points are rasterized as vertical layers defined in
+#' \code{CERMBlidar::CERMBstrata}. The point count raster layers are then
+#' imported into the database along with meta-data for tile extent, point
+#' density, etc. Optionally, building points can also be extracted from the LAS
+#' tile and imported.
+#'
+#' Point counts for vertical layers of vegetation are stored in the database
+#' raster table \code{point_counts}, with a raster record for each imported LAS
+#' tile. Typically there will be a lower density of points in edge cells of a
+#' raster than in interior cells due to the relative position of LAS tile
+#' boundaries and raster boundaries. This can be resolved by edge-merging
+#' adjacent rasters, summing overlapping cells (e.g. using the PostGIS ST_UNION
+#' operation with the 'SUM' option). The original intention was to do this by
+#' default as part of the import process, and store an edge-merged copy of the
+#' raster point counts data in a second database table
+#' \code{point_counts_union}. However, we found that the time taken by the
+#' merging operation became excessive as the number of rasters in the database
+#' grew, although we are yet to understand exactly why this is the case. Merging
+#' can be enabled by setting the \code{union.rasters} argument to \code{TRUE}
+#' (default is \code{FALSE}) \strong{but this is not recommended.} Note that when
+#' exporting point count data with function \code{db_export_stratum_counts}, the
+#' rasters for adjacent LAS tiles will be edge-merged.
 #'
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{\link{db_connect_postgis}}.
@@ -134,7 +153,12 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   unusual configurations of flight lines that cause a false positive overlap
 #'   check.
 #'
-#' @param union.rasters If \code{TRUE}, raster point counts derived from the
+#' @param buildings If \code{TRUE}, points classified as buildings (class 6)
+#'   will be imported into the \code{building_points} database table. The
+#'   default (\code{FALSE}) is to not import building points.
+#'
+#' @param union.rasters \strong{See Details for why you probably do not want to
+#'   use this argument.} If \code{TRUE}, raster point counts derived from the
 #'   LAS images will be loaded into both the \code{point_counts} table as a
 #'   single record and the \code{point_counts_union} table where data for
 #'   spatially adjacent, overlapping rasters are merged. If \code{FALSE}
@@ -145,6 +169,33 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   rasters to load before merging data into the \code{point_counts_union}
 #'   table. The default, and minimum allowable, value is 1.
 #'
+#' @return A vector of integer values giving the result for each input LAS file,
+#'   where 1 means successfully imported; 0 means skipped because previously
+#'   imported; -1 means not imported due to error (usually a problem with
+#'   resolving flight line overlap).
+#'
+#' @examples
+#' \dontrun{
+#' # Establish connection
+#' Sys.setenv(PGPASSWORD = "mypassword")
+#' DB <- db_connect_postgis("cermb_lidar")
+#'
+#' # Import a set of LAS files. Point heights will be set relative
+#' # to ground level via Delaunay triangulation.
+#' LAS.FILES <- dir("c:/somewhere/LAS", pattern = "zip$", full.names = TRUE)
+#' imported <- db_import_las(DB, LAS.FILES)
+#' cat(sum(imported == 1), "files were imported\n",
+#'     sum(imported == 0), "files already present were skipped\n",
+#'     sum(imported == -1), "files failed to be imported\n")
+#'
+#' # Import a set of LAS files with corresponding DEM (raster elevation)
+#' # files to be used to normalize point heights.
+#' LAS.FILES <- dir("c:/somewhere/LAS", pattern = "zip$", full.names = TRUE)
+#' DEM.FILES <- dir("c:/somewhere/DEM", pattern = "zip$", full.names = TRUE)
+#' imported <- db_import_las(DB, LAS.FILES, DEM.FILES)
+#'
+#' }
+#'
 #' @export
 #'
 db_import_las <- function(dbsettings,
@@ -152,6 +203,7 @@ db_import_las <- function(dbsettings,
                           dem.paths = NULL,
                           mapnames = NULL,
                           check.overlap = TRUE,
+                          buildings = FALSE,
                           union.rasters = FALSE,
                           union.batch = 1) {
 
@@ -223,7 +275,8 @@ db_import_las <- function(dbsettings,
       }
 
       tryCatch({
-        .do_import_las(dbsettings, las.file, dem.file, mapname, check.overlap)
+        .do_import_las(dbsettings, las.file, dem.file,
+                       mapname, check.overlap, buildings)
         imported[i] <- 1
 
         if (union.rasters) {
@@ -258,7 +311,8 @@ db_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
                           mapname,
-                          check.overlap) {
+                          check.overlap,
+                          buildings) {
 
   message("Reading data and normalizing point heights")
 
@@ -283,12 +337,13 @@ db_import_las <- function(dbsettings,
                          las = las,
                          metadata.id = metadata.id)
 
-  message("Importing building points")
-  db_load_building_points(dbsettings,
-                          las = las,
-                          metadata.id = metadata.id)
+  if (buildings && (6 %in% las@data$Classification)) {
+    message("Importing building points")
+    db_load_building_points(dbsettings,
+                            las = las,
+                            metadata.id = metadata.id)
+  }
 }
-
 
 #' Check if one or more LAS files have been imported into the database
 #'
@@ -802,13 +857,11 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @return A raster stack linked to the exported GeoTIFF file.
 #'
-#' @seealso \code{\link{db_connect_postgis}} \code{\link{db_create_postgis}}
-#'
 #' @export
 #'
-db_export_point_counts <- function(dbsettings, geom, outpath,
-                                   time.interval = NULL,
-                                   default.epsg = NULL) {
+db_export_stratum_counts <- function(dbsettings, geom, outpath,
+                                     time.interval = NULL,
+                                     default.epsg = NULL) {
 
   if (inherits(geom, what = c("sfc", "sfg")))
     g <- geom
@@ -939,7 +992,7 @@ db_export_point_counts <- function(dbsettings, geom, outpath,
 
   command <- glue::glue("
     CREATE TEMPORARY TABLE tmp_export_rast AS
-      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast), 'GTiff')) AS loid
+      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast, 'SUM'), 'GTiff')) AS loid
       FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
       WHERE rid IN ({rids});
     --------

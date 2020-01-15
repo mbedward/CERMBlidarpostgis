@@ -3,7 +3,6 @@
 \docType{package}
 \name{CERMBlidarpostgis}
 \alias{CERMBlidarpostgis}
-\alias{CERMBlidarpostgis-package}
 \title{CERMBlidarpostgis: Spatial database functions for LIDAR data}
 \description{
 This package extends the CERMBlidar package with functions for
