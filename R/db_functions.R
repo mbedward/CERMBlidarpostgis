@@ -839,19 +839,15 @@ db_get_las_bounds <- function(dbsettings,
 }
 
 
-#' Export raster point count data that intersects with one or more features
+#' Export point count rasters that intersect query features
 #'
 #' This function takes a set of features (points, lines, polygons or an extent
 #' in the form of a matrix or raster Extent object), identifies the raster tiles
 #' of point count data that the features intersect with, and exports these to a
-#' GeoTIFF file.
-#'
-#' @note Presently, this function takes raster data from the non-unioned
-#' point counts table where each record corresponds to an imported LAS file.
-#' The data are then unioned before export to allow for overlapping LAS tile
-#' edges. The original intention was to have a second raster point counts
-#' table of pre-unioned data, but this has so far proved difficult to implement
-#' efficiently and reliably.
+#' GeoTIFF file. Optionally, the data to export can be restricted to a specified
+#' time period. If any parts of the query area are covered by LiDAR data for two
+#' or more dates, the data to export is chosen based on the
+#' \code{overlap.action} and \code{overlap.yearorder} parameters.
 #'
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{db_connect_postgis} or \code{db_create_postgis}.
