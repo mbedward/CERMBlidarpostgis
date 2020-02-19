@@ -909,19 +909,31 @@ db_get_las_bounds <- function(dbsettings,
 #' @export
 #'
 db_export_stratum_counts <- function(
-  dbsettings, geom, outpath,
+  dbsettings,
+  geom,
+  outpath,
   purpose = c("general", "postfire"),
   time.interval = NULL,
   default.epsg = NULL,
   overlap.action = c("latest", "earliest", "year", "fail"),
   overlap.yearorder = NULL) {
 
-  warning("Function still under construction - any overlapping tiles will stop export")
+  overlap.action <- match.arg(overlap.action)
 
-  if (inherits(geom, what = c("sfc", "sfg")))
+  if (overlap.action == "year") {
+    if (length(overlap.yearorder) < 1 || !is.numeric(overlap.yearorder))
+      stop("overlap.yearorder should be a vector of one or more four digit year numbers")
+
+    overlap.yearorder <- unique(overlap.yearorder)
+
+    if (any(overlap.yearorder < 1990 | overlap.yearorder > 2100))
+      stop("overlap.yearorder values expected to be in the range 1990 to 2100")
+  }
+
+  if (inherits(geom, what = c("sfc", "sfg"))) {
     g <- geom
 
-  else if (inherits(geom, what = "sf")) {
+  } else if (inherits(geom, what = "sf")) {
     isgeom <- sapply(geom, inherits, what = "sfc")
     if (!sum(isgeom) == 1)
       stop("Failed to find geometry column in sf data frame")
@@ -950,8 +962,11 @@ db_export_stratum_counts <- function(
   }
 
   g.crs <- sf::st_crs(g)
-  if (!is.na(g.crs)) epsg <- g.crs$epsg
-  else epsg <- default.epsg
+  if (!is.na(g.crs)) {
+    epsg <- g.crs$epsg
+  } else {
+    epsg <- default.epsg
+  }
 
   # Determine schema based on EPSG
   schema.epsgs <- 28300 + as.integer(stringr::str_extract(dbsettings$schema, "\\d{2}$"))
@@ -966,8 +981,7 @@ db_export_stratum_counts <- function(
     time.interval.type <- "none"
   } else if (lubridate::is.interval(time.interval)) {
     time.interval.type <- "interval"
-  }
-  else if(is.vector(time.interval) &&
+  } else if(is.vector(time.interval) &&
           is.numeric(time.interval) &&
           all(stringr::str_detect(time.interval, "^\\d{4}")) ) {
     time.interval.type <- "years"
@@ -979,7 +993,6 @@ db_export_stratum_counts <- function(
 
   p <- .get_pool(dbsettings)
   con <- pool::poolCheckout(p)
-  pool::dbBegin(con)
 
   g.values <- sapply(g, function(gg) {
     glue::glue("ST_GeomFromText('{sf::st_as_text(gg)}', {epsg})")
@@ -1000,46 +1013,39 @@ db_export_stratum_counts <- function(
 
   # Identify tiles that intersect with the features
   command <- glue::glue("
-    SELECT pc.rid, pc.meta_id FROM
-      {schema}.{dbsettings$TABLE_COUNTS_LAS} AS pc, tmp_features as f
-      WHERE ST_Intersects(pc.rast, f.feature)")
+    SELECT m.id as meta_id, m.capture_start, m.capture_end FROM
+      {schema}.{dbsettings$TABLE_METADATA} AS m, tmp_features as f
+      WHERE ST_Intersects(m.bounds, f.feature)")
 
-  rasterids <- pool::dbGetQuery(con, command)
+  tiles <- pool::dbGetQuery(con, command)
 
-  if (nrow(rasterids) == 0) {
+  if (nrow(tiles) == 0) {
     pool::dbRollback(con)
     pool::poolReturn(con)
-    message("No point count rasters for these features")
+    message("No LAS tiles in the database intersect the query features")
     return(NULL)
   }
 
   # If a time interval is specified, find the subset of rasters that
   # falls within the interval
   if (time.interval.type != "none") {
-    id.vals <- paste(rasterids$meta_id, collapse = ", ")
-    command <- glue::glue("
-        SELECT id, capture_start, capture_end FROM {schema}.{dbsettings$TABLE_METADATA}
-          WHERE id IN ({id.vals});")
-
-    rastertimes <- pool::dbGetQuery(con, command)
-
     if (time.interval.type == "years") {
-      ii <- lubridate::year(rastertimes$capture_start) %in% time.interval |
-        lubridate::year(rastertimes$capture_end) %in% time.interval
+      ii <- lubridate::year(tiles$capture_start) %in% time.interval |
+        lubridate::year(tiles$capture_end) %in% time.interval
     }
     if (time.interval.type == "interval") {
-      ii <- lubridate::`%within%`(rastertimes$capture_start, time.interval) |
-        lubridate::`%within%`(rastertimes$capture_end, time.interval)
+      ii <- lubridate::`%within%`(tiles$capture_start, time.interval) |
+        lubridate::`%within%`(tiles$capture_end, time.interval)
     }
 
     if (!any(ii)) {
-      message("No point count rasters within the time interval for these features")
+      message("No LAS tiles for the query features are within the time interval")
       pool::dbRollback(con)
       pool::poolReturn(con)
       return(NULL)
     }
 
-    rasterids <- rasterids[ii, ]
+    tiles <- tiles[ii, ]
   }
 
   # Check for rasters with (approximately) the same bounds. This occurs when
@@ -1047,31 +1053,74 @@ db_export_stratum_counts <- function(
   # whether a tile's centroid is overlapped by one or more other tiles within
   # the time period of interest (where defined)
   #
-  meta.ids <- paste(rasterids$meta_id, collapse = ", ")
+  ids.txt <- paste(tiles$meta_id, collapse = ", ")
 
   command <- glue::glue("
-    SELECT a.id as id1, EXTRACT('year' from a.capture_start) as year1,
-      b.id as id2, EXTRACT('year' from b.capture_start) as year2,
+    SELECT a.id as id1, b.id as id2
       FROM {schema}.{dbsettings$TABLE_METADATA} a, {schema}.{dbsettings$TABLE_METADATA} b
-      WHERE a.id IN ({meta.ids}) AND b.id IN ({meta.ids}) AND
+      WHERE a.id IN ({ids.txt}) AND b.id IN ({ids.txt}) AND
         ST_Intersects(ST_Centroid(a.bounds), b.bounds) AND
         a.id < b.id;")
 
+  # Deal with any overlapping tiles (i.e. largely overlapping bounds indicating
+  # different scan times for the same bounds)
+  #
   overlaps <- pool::dbGetQuery(con, command)
 
-
-
   if (nrow(overlaps) > 0) {
-    stop("Bummer: Overlap code not working yet")
+    if (overlap.action == "fail") {
+      stop("Export cancelled. Overlapping tiles detected and overlap.action == 'fail'")
+
+    } else {
+      id1s <- unique(overlaps$id1)
+      n <- length(id1s)
+      msg <- ifelse(n == 1, "Resolving 1 set", paste("Resolving", n, "sets"))
+      message(msg, " of overlapping tiles")
+
+      chosen.ids <- sapply(id1s, function(id1) {
+        ii <- overlaps$id1 == id1
+        ids <- c(id1, overlaps$id2[ii])
+        times <- tiles$capture_start[ tiles$meta_id %in% ids ]
+
+        if (overlap.action == "latest") {
+          k <- which(times == max(times))[1]
+
+        } else if (overlap.action == "earliest") {
+          k <- which(times == min(times))[1]
+
+        } else if (overlap.action == "year") {
+          years <- lubridate::year(times)
+          pos <- match(years, overlap.yearorder)
+          if (all(is.na(pos))) { # it seems we don't want any of these tile years
+            k <- NA
+          } else {
+            k <- which(pos == min(pos, na.rm = TRUE))[1]
+          }
+        }
+
+        if (is.na(k)) {
+          NA
+        } else {
+          ids[k]
+        }
+      })
+
+      ii <- tiles$meta_id %in% chosen.ids
+      tiles <- tiles[ii, ]
+    }
   }
 
-  rids <- paste(rasterids$rid, collapse = ", ")
 
+  # Finally, do the export
+  #
+  ids.txt <- paste(tiles$meta_id, collapse = ", ")
+
+  pool::dbBegin(con)
   command <- glue::glue("
     CREATE TEMPORARY TABLE tmp_export_rast AS
       SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast, 'SUM'), 'GTiff')) AS loid
       FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
-      WHERE rid IN ({rids});
+      WHERE meta_id IN ({ids.txt});
     --------
     SELECT lo_export(loid, '{outpath}')
       FROM tmp_export_rast;
@@ -1085,16 +1134,28 @@ db_export_stratum_counts <- function(
 
   pool::dbExecute(con, command)
   pool::dbCommit(con)
-  pool::poolReturn(con)
 
   if (file.exists(outpath)) {
-    r <- raster::stack(outpath)
-    names(r) <- paste("height", 1:raster::nlayers(r), sep = ".")
-    r
+    rcounts <- raster::stack(outpath)
+    names(rcounts) <- CERMBlidar::StrataCERMB$name
   } else {
-    warning("Output GeoTIFF file was not created")
-    NULL
+    pool::poolReturn(con)
+    stop("GeoTIFF file for exported point counts could not be created")
   }
+
+  # Create raster of tile scan times
+  command <- glue::glue("
+    SELECT id as meta_id, capture_start, bounds
+      FROM {schema}.{dbsettings$TABLE_METADATA}
+      WHERE id IN ({ids.txt});
+  ")
+
+  tiles <- sf::st_read(con, query = command)
+  tiles$i_time <- as.integer( format(tiles$capture_start, "%Y%m%d") )
+
+  rdates <- fasterize::fasterize(tiles, rcounts, field = "i_time", fun = "min")
+
+  list(counts = rcounts, dates = rdates)
 }
 
 
