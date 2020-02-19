@@ -1206,19 +1206,24 @@ db_summary <- function(dbsettings) {
 #' DBSettings <- db_connect_postgis("cermb_lidar")
 #'
 #' # Simple query - count records in one of the tables
-#' res <- db_get_query(DBSettings, "select count(*) as n from mgazone56.point_counts")
+#' res <- db_get_query(DBSettings,
+#'                     "select count(*) as n from mgazone56.point_counts")
 #'
-#' # A more complex query using the glue package to compose the SQL string
+#' # A more complex query: find overlapping LAS tiles in selected map sheets
 #' library(glue)
 #'
-#' mapnames <- c("Dorrigo", "Drake", "Gosford")
+#' mapnames <- c("Wallerawang", "StAlbans", "Gosford",
+#'               "MountPomany", "HowesValley", "Cessnock")
 #'
-#' values <- glue_collapse(glue("'{mapnames}'"), sep = ", ")
+#' values <- paste(mapnames, collapse = ", ")
 #'
-#' query <- glue::glue("select id, mapname, capture_start from
-#'                        (select id, substring(filename, '^[^\\d]+') as mapname, capture_start
-#'                         from mgazone56.las_metadata) as foo
-#'                      where mapname in ({values});")
+#' # Using spatial self-join on the metadata table
+#' #
+#' query <- glue("select a.id as id1, b.id as id2, mapname, capture_start
+#'               from mgazone56.las_metadata as a, mgazone56.las_metadata as b,
+#'               where mapname in ({values}) and
+#'               ST_Intersects(ST_Centroid(a.bounds), b.bounds) and
+#'               a.id < b.id;")
 #'
 #' res <- db_get_query(DBSettings, query)
 #' }
