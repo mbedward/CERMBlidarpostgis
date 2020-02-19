@@ -123,30 +123,32 @@ db_create_postgis <- function(dbname,
     # Table for LAS tile metadata
     command <- glue::glue(
       "CREATE TABLE IF NOT EXISTS \\
-      {schema}.{tblnames$TABLE_METADATA} (\\
-      id serial PRIMARY KEY, \\
-      filename text NOT NULL, \\
-      capture_start timestamp with time zone NOT NULL, \\
-      capture_end timestamp with time zone NOT NULL, \\
-      area double precision NOT NULL, \\
-      point_density double precision NOT NULL, \\
-      npts_ground integer NOT NULL, \\
-      npts_veg integer NOT NULL, \\
-      npts_building integer NOT NULL, \\
-      npts_water integer NOT NULL, \\
-      npts_other integer NOT NULL, \\
-      npts_total integer NOT NULL, \\
-      nflightlines integer NOT NULL, \\
-      bounds geometry(Polygon, {epsg}) NOT NULL, \\
-      mapname text NOT NULL);" )
+      {schema}.{tblnames$TABLE_METADATA} (
+      id serial PRIMARY KEY,
+      filename text NOT NULL,
+      purpose text NOT NULL CHECK (purpose IN ('general', 'postfire')),
+      capture_start timestamp with time zone NOT NULL,
+      capture_end timestamp with time zone NOT NULL,
+      area double precision NOT NULL,
+      point_density double precision NOT NULL,
+      npts_ground integer NOT NULL,
+      npts_veg integer NOT NULL,
+      npts_building integer NOT NULL,
+      npts_water integer NOT NULL,
+      npts_other integer NOT NULL,
+      npts_total integer NOT NULL,
+      nflightlines integer NOT NULL,
+      bounds geometry(Polygon, {epsg}) NOT NULL,
+      mapname text NOT NULL,
+      );" )
 
     pool::dbExecute(p, command)
 
     # Table for building points
     command <- glue::glue(
       "CREATE TABLE IF NOT EXISTS \\
-      {schema}.{tblnames$TABLE_BUILDINGS} (\\
-      id serial PRIMARY KEY, \\
+      {schema}.{tblnames$TABLE_BUILDINGS} (
+      id serial PRIMARY KEY,
       meta_id integer references {schema}.las_metadata(id),
       height double precision NOT NULL,
       geom geometry(Point, {epsg}) NOT NULL);"
@@ -156,8 +158,8 @@ db_create_postgis <- function(dbname,
 
     # Table for unmerged LAS tile point counts
     command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                        {schema}.{tblnames$TABLE_COUNTS_LAS} \\
-                        (rid serial primary key, \\
+                        {schema}.{tblnames$TABLE_COUNTS_LAS}
+                        (rid serial primary key,
                          meta_id integer references {schema}.las_metadata(id),
                          rast raster);")
 
@@ -165,7 +167,7 @@ db_create_postgis <- function(dbname,
 
     # Table for merged point counts
     command <- glue::glue("CREATE TABLE IF NOT EXISTS \\
-                        {schema}.{tblnames$TABLE_COUNTS_UNION} \\
+                        {schema}.{tblnames$TABLE_COUNTS_UNION}
                         (rid serial primary key, rast raster);")
 
     pool::dbExecute(p, command)

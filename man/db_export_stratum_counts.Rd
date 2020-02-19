@@ -8,8 +8,11 @@ db_export_stratum_counts(
   dbsettings,
   geom,
   outpath,
+  purpose = c("general", "postfire"),
   time.interval = NULL,
-  default.epsg = NULL
+  default.epsg = NULL,
+  overlap.action = c("latest", "earliest", "year", "fail"),
+  overlap.yearorder = NULL
 )
 }
 \arguments{
@@ -22,6 +25,10 @@ Y min,max.}
 
 \item{outpath}{A path and filename for the output GeoTIFF file.}
 
+\item{purpose}{Either \code{'general'} (default) to export rasters for
+general purpose imagery or \code{'postfire'} to export rasters for
+specially flown, post-fire imagery. May be abbreviated.}
+
 \item{time.interval}{If provided, only export data for rasters where the
 scan time (capture_start and capture_end fields) overlap the given interval.
 Can be provided as either a vector of one or more years as four-digit integers,
@@ -30,9 +37,38 @@ or a \code{lubridate::interval} object.}
 \item{default.epsg}{EPSG code to assume for the query feature(s). Ignored if
 the features are \code{sf} or \code{raster::Extent} objects with a coordinate
 reference system defined.}
+
+\item{overlap.action}{A character string specifying how to choose between
+overlapping tiles. Two tiles are considered to be overlapping if the
+centroid of the first tile lies within the bounds of the second tile. In
+such cases, only one of the tiles should be exported, otherwise the UNION
+SUM operation that is applied to merge edge pixels of adjacent rasters will
+inadvertently sum the values of the overlapping tiles. Options are:
+\code{'latest'} (default) to choose the most recent tile; \code{'earliest'}
+to choose the earliest tile; \code{'year'} to apply a preference order of
+years specified via the \code{overlap.yearorder} parameter; \code{'fail'}
+to abort the export process and issue an error message if overlapping tiles
+are detected.}
+
+\item{overlap.yearorder}{A vector of one or more four digit year numbers
+specifying the preference order to apply when overlapping LAS tiles are
+detected. Only used if parameter \code{overlap.action} is set to
+\code{'year'}, The first element in the vector is the most preferred.
+Overlapping tiles for years that are not specified in this vector will not
+be exported.}
 }
 \value{
-A raster stack linked to the exported GeoTIFF file.
+A list with the following elments:
+  \describe{
+    \item{counts}{A RasterStack linked to the GeoTIFF file exported by the
+      function, with layer names corresonding to those defined in the
+      StrataCERMB lookup table from the CERMBlidar package.}
+    \item{dates}{A RasterLayer having the same row and column dimensions as
+      the counts raster, where cell values are LiDAR capture dates coded as
+      eight digit integers (yyyymmdd). Cells located within the common edge
+      of adjacent tiles with different capture dates are assigned the date
+      of the earlier tile.}
+  }
 }
 \description{
 This function takes a set of features (points, lines, polygons or an extent
@@ -45,6 +81,6 @@ Presently, this function takes raster data from the non-unioned
 point counts table where each record corresponds to an imported LAS file.
 The data are then unioned before export to allow for overlapping LAS tile
 edges. The original intention was to have a second raster point counts
-table of pre-unioned data, but this has proved difficult to implement
+table of pre-unioned data, but this has so far proved difficult to implement
 efficiently and reliably.
 }

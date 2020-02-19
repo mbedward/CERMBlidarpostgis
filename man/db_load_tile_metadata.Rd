@@ -4,7 +4,13 @@
 \alias{db_load_tile_metadata}
 \title{Import LAS tile metadata into the database}
 \usage{
-db_load_tile_metadata(dbsettings, las, filename, mapname)
+db_load_tile_metadata(
+  dbsettings,
+  las,
+  filename,
+  mapname,
+  purpose = c("general", "postfire")
+)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
@@ -16,6 +22,10 @@ by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
 \item{mapname}{Name of the map sheet (assumed to be 100k topographic map) to
 assign to this LAS tile.}
+
+\item{purpose}{Either \code{'general'} (default) for general purpose imagery
+or \code{'postfire'} for specially flown, post-fire imagery. May be
+abbreviated.}
 }
 \value{
 The integer value of the \code{'id'} field for the newly created

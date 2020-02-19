@@ -2,13 +2,14 @@
 % Please edit documentation in R/db_functions.R
 \name{db_import_las}
 \alias{db_import_las}
-\title{Import a raster of point counts and its metadata into the database}
+\title{Import data from one or more LAS files.}
 \usage{
 db_import_las(
   dbsettings,
   las.paths,
   dem.paths = NULL,
   mapnames = NULL,
+  purpose = c("general", "postfire"),
   check.overlap = TRUE,
   buildings = FALSE,
   union.rasters = FALSE,
@@ -16,7 +17,7 @@ db_import_las(
 )
 }
 \arguments{
-\item{dbsettings}{A named list of database connection settings returned
+\item{dbsettings}{A named list of database connection settings as returned
 by \code{\link{db_connect_postgis}}.}
 
 \item{las.paths}{The paths and filenames of the LAS source files. This can
@@ -38,6 +39,10 @@ LAS tiles. If \code{NULL} (default), mapsheet names are extracted from the
 leading alphabetic portion of the LAS file names. Alternatively it can be
 a character vector of either length 1 (same name for all LAS tiles) or
 length equal to that of \code{las.paths}.}
+
+\item{purpose}{Either \code{'general'} (default) for general purpose imagery
+or \code{'postfire'} for specially flown, post-fire imagery. May be
+abbreviated.}
 
 \item{check.overlap}{If \code{TRUE} (default), images will be checked for
 overlap between flight lines using the function
@@ -71,7 +76,7 @@ A vector of integer values giving the result for each input LAS file,
   resolving flight line overlap).
 }
 \description{
-First, the LAS tile is read from disk and the function checks that it is
+First, each LAS tile is read from disk and the function checks that it is
 located in one of the map zones supported by the database (each zone's data
 is stored in a separate schema). Next, point heights are normalized, any
 overlap between flight lines is removed, and the counts of vegetation, ground

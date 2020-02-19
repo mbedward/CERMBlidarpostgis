@@ -92,9 +92,9 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 }
 
 
-#' Import a raster of point counts and its metadata into the database
+#' Import data from one or more LAS files.
 #'
-#' First, the LAS tile is read from disk and the function checks that it is
+#' First, each LAS tile is read from disk and the function checks that it is
 #' located in one of the map zones supported by the database (each zone's data
 #' is stored in a separate schema). Next, point heights are normalized, any
 #' overlap between flight lines is removed, and the counts of vegetation, ground
@@ -121,7 +121,7 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #' exporting point count data with function \code{db_export_stratum_counts}, the
 #' rasters for adjacent LAS tiles will be edge-merged.
 #'
-#' @param dbsettings A named list of database connection settings returned
+#' @param dbsettings A named list of database connection settings as returned
 #'   by \code{\link{db_connect_postgis}}.
 #'
 #' @param las.paths The paths and filenames of the LAS source files. This can
@@ -143,6 +143,10 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   leading alphabetic portion of the LAS file names. Alternatively it can be
 #'   a character vector of either length 1 (same name for all LAS tiles) or
 #'   length equal to that of \code{las.paths}.
+#'
+#' @param purpose Either \code{'general'} (default) for general purpose imagery
+#'   or \code{'postfire'} for specially flown, post-fire imagery. May be
+#'   abbreviated.
 #'
 #' @param check.overlap If \code{TRUE} (default), images will be checked for
 #'   overlap between flight lines using the function
@@ -202,12 +206,15 @@ db_import_las <- function(dbsettings,
                           las.paths,
                           dem.paths = NULL,
                           mapnames = NULL,
+                          purpose = c("general", "postfire"),
                           check.overlap = TRUE,
                           buildings = FALSE,
                           union.rasters = FALSE,
                           union.batch = 1) {
 
   p <- .get_pool(dbsettings)
+
+  purpose <- match.arg(purpose)
 
   if (union.rasters) {
     warning("Beware!!!",
@@ -276,7 +283,8 @@ db_import_las <- function(dbsettings,
 
       tryCatch({
         .do_import_las(dbsettings, las.file, dem.file,
-                       mapname, check.overlap, buildings)
+                       mapname, purpose,
+                       check.overlap, buildings)
         imported[i] <- 1
 
         if (union.rasters) {
@@ -311,6 +319,7 @@ db_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
                           mapname,
+                          purpose,
                           check.overlap,
                           buildings) {
 
@@ -330,7 +339,7 @@ db_import_las <- function(dbsettings,
 
   message("Importing LAS metadata")
   metadata.id <- db_load_tile_metadata(dbsettings,
-                                       las, las.path, mapname)
+                                       las, las.path, mapname, purpose)
 
   message("Importing point counts for strata")
   db_load_stratum_counts(dbsettings,
@@ -495,6 +504,10 @@ pg_load_raster <- function(dbsettings,
 #' @param mapname Name of the map sheet (assumed to be 100k topographic map) to
 #'   assign to this LAS tile.
 #'
+#' @param purpose Either \code{'general'} (default) for general purpose imagery
+#'   or \code{'postfire'} for specially flown, post-fire imagery. May be
+#'   abbreviated.
+#'
 #' @return The integer value of the \code{'id'} field for the newly created
 #'   database record.
 #'
@@ -503,9 +516,12 @@ pg_load_raster <- function(dbsettings,
 #' @export
 #'
 db_load_tile_metadata <- function(dbsettings,
-                                  las, filename, mapname) {
+                                  las, filename, mapname,
+                                  purpose = c("general", "postfire")) {
 
   .check_database_password()
+
+  purpose <- match.arg(purpose)
 
   bounds <- CERMBlidar::get_las_bounds(las, "sf")
   epsgcode <- sf::st_crs(bounds)$epsg
@@ -532,26 +548,26 @@ db_load_tile_metadata <- function(dbsettings,
 
   command <- glue::glue(
     "insert into {tblname} \\
-    (filename, mapname, capture_start, capture_end, \\
-    area, \\
-    point_density, \\
-    npts_ground, npts_veg, npts_building, npts_water, npts_other, npts_total, \\
+    (filename, mapname, purpose, capture_start, capture_end,
+    area, point_density,
+    npts_ground, npts_veg, npts_building, npts_water, npts_other, npts_total,
     nflightlines,
     bounds)
-    values(\\
-    '{filename}', \\
-    '{mapname}', \\
-    '{.tformat(scantimes[1,1])}', \\
-    '{.tformat(scantimes[1,2])}', \\
-    {area}, \\
-    {ptotal / area}, \\
-    {pcounts$ground}, \\
-    {pcounts$veg}, \\
-    {pcounts$building}, \\
-    {pcounts$water}, \\
-    {pcounts$other}, \\
-    {ptotal}, \\
-    {nflightlines}, \\
+    values (
+    '{filename}',
+    '{mapname}',
+    '{purpose}',
+    '{.tformat(scantimes[1,1])}',
+    '{.tformat(scantimes[1,2])}',
+    {area},
+    {ptotal / area},
+    {pcounts$ground},
+    {pcounts$veg},
+    {pcounts$building},
+    {pcounts$water},
+    {pcounts$other},
+    {ptotal},
+    {nflightlines},
     ST_GeomFromText('{wkt}', {epsgcode}) );
     ")
 
@@ -834,7 +850,7 @@ db_get_las_bounds <- function(dbsettings,
 #' point counts table where each record corresponds to an imported LAS file.
 #' The data are then unioned before export to allow for overlapping LAS tile
 #' edges. The original intention was to have a second raster point counts
-#' table of pre-unioned data, but this has proved difficult to implement
+#' table of pre-unioned data, but this has so far proved difficult to implement
 #' efficiently and reliably.
 #'
 #' @param dbsettings A named list of database connection settings returned
@@ -846,6 +862,10 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @param outpath A path and filename for the output GeoTIFF file.
 #'
+#' @param purpose Either \code{'general'} (default) to export rasters for
+#'   general purpose imagery or \code{'postfire'} to export rasters for
+#'   specially flown, post-fire imagery. May be abbreviated.
+#'
 #' @param time.interval If provided, only export data for rasters where the
 #'   scan time (capture_start and capture_end fields) overlap the given interval.
 #'   Can be provided as either a vector of one or more years as four-digit integers,
@@ -855,13 +875,48 @@ db_get_las_bounds <- function(dbsettings,
 #'   the features are \code{sf} or \code{raster::Extent} objects with a coordinate
 #'   reference system defined.
 #'
-#' @return A raster stack linked to the exported GeoTIFF file.
+#' @param overlap.action A character string specifying how to choose between
+#'   overlapping tiles. Two tiles are considered to be overlapping if the
+#'   centroid of the first tile lies within the bounds of the second tile. In
+#'   such cases, only one of the tiles should be exported, otherwise the UNION
+#'   SUM operation that is applied to merge edge pixels of adjacent rasters will
+#'   inadvertently sum the values of the overlapping tiles. Options are:
+#'   \code{'latest'} (default) to choose the most recent tile; \code{'earliest'}
+#'   to choose the earliest tile; \code{'year'} to apply a preference order of
+#'   years specified via the \code{overlap.yearorder} parameter; \code{'fail'}
+#'   to abort the export process and issue an error message if overlapping tiles
+#'   are detected.
+#'
+#' @param overlap.yearorder A vector of one or more four digit year numbers
+#'   specifying the preference order to apply when overlapping LAS tiles are
+#'   detected. Only used if parameter \code{overlap.action} is set to
+#'   \code{'year'}, The first element in the vector is the most preferred.
+#'   Overlapping tiles for years that are not specified in this vector will not
+#'   be exported.
+#'
+#' @return A list with the following elments:
+#'   \describe{
+#'     \item{counts}{A RasterStack linked to the GeoTIFF file exported by the
+#'       function, with layer names corresonding to those defined in the
+#'       StrataCERMB lookup table from the CERMBlidar package.}
+#'     \item{dates}{A RasterLayer having the same row and column dimensions as
+#'       the counts raster, where cell values are LiDAR capture dates coded as
+#'       eight digit integers (yyyymmdd). Cells located within the common edge
+#'       of adjacent tiles with different capture dates are assigned the date
+#'       of the earlier tile.}
+#'   }
 #'
 #' @export
 #'
-db_export_stratum_counts <- function(dbsettings, geom, outpath,
-                                     time.interval = NULL,
-                                     default.epsg = NULL) {
+db_export_stratum_counts <- function(
+  dbsettings, geom, outpath,
+  purpose = c("general", "postfire"),
+  time.interval = NULL,
+  default.epsg = NULL,
+  overlap.action = c("latest", "earliest", "year", "fail"),
+  overlap.yearorder = NULL) {
+
+  warning("Function still under construction - any overlapping tiles will stop export")
 
   if (inherits(geom, what = c("sfc", "sfg")))
     g <- geom
@@ -943,7 +998,7 @@ db_export_stratum_counts <- function(dbsettings, geom, outpath,
 
   pool::dbExecute(con, command)
 
-  # Identify rasters that intersect with the features
+  # Identify tiles that intersect with the features
   command <- glue::glue("
     SELECT pc.rid, pc.meta_id FROM
       {schema}.{dbsettings$TABLE_COUNTS_LAS} AS pc, tmp_features as f
@@ -987,6 +1042,28 @@ db_export_stratum_counts <- function(dbsettings, geom, outpath,
     rasterids <- rasterids[ii, ]
   }
 
+  # Check for rasters with (approximately) the same bounds. This occurs when
+  # a 2x2km tile has been flown more than once. For speed, we simply check
+  # whether a tile's centroid is overlapped by one or more other tiles within
+  # the time period of interest (where defined)
+  #
+  meta.ids <- paste(rasterids$meta_id, collapse = ", ")
+
+  command <- glue::glue("
+    SELECT a.id as id1, EXTRACT('year' from a.capture_start) as year1,
+      b.id as id2, EXTRACT('year' from b.capture_start) as year2,
+      FROM {schema}.{dbsettings$TABLE_METADATA} a, {schema}.{dbsettings$TABLE_METADATA} b
+      WHERE a.id IN ({meta.ids}) AND b.id IN ({meta.ids}) AND
+        ST_Intersects(ST_Centroid(a.bounds), b.bounds) AND
+        a.id < b.id;")
+
+  overlaps <- pool::dbGetQuery(con, command)
+
+
+
+  if (nrow(overlaps) > 0) {
+    stop("Bummer: Overlap code not working yet")
+  }
 
   rids <- paste(rasterids$rid, collapse = ", ")
 
