@@ -9,6 +9,7 @@ db_import_las(
   las.paths,
   dem.paths = NULL,
   mapnames = NULL,
+  default.epsgs = NULL,
   purpose = c("general", "postfire"),
   check.overlap = TRUE,
   buildings = FALSE,
@@ -39,6 +40,11 @@ LAS tiles. If \code{NULL} (default), mapsheet names are extracted from the
 leading alphabetic portion of the LAS file names. Alternatively it can be
 a character vector of either length 1 (same name for all LAS tiles) or
 length equal to that of \code{las.paths}.}
+
+\item{default.epsgs}{Integer EPSG codes for each of the imported LAS tiles.
+If \code{NULL} (default), EPSG codes will be read from the LAS headers.
+Sometimes (e.g. class C1 LAS files) no coordinate reference sytem is
+defined in the LAS header, so it is necessary to set the code manually.}
 
 \item{purpose}{Either \code{'general'} (default) for general purpose imagery
 or \code{'postfire'} for specially flown, post-fire imagery. May be

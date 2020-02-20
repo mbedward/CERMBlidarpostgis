@@ -1,8 +1,8 @@
 Package: CERMBlidarpostgis
 Type: Package
 Title: Store and retrieve processed LIDAR data from a PostGIS database
-Version: 0.1.18
-Date: 2020-02-19
+Version: 0.1.19
+Date: 2020-02-20
 Authors@R: c(
   person("Meaghan", "Jenkins", role = "aut", email = "mjenkins@uow.edu.au"),
   person("Michael", "Bedward", role = c("aut", "cre"), email = "michael.bedward@gmail.com")
@@ -19,7 +19,7 @@ Description: This package extends the CERMBlidar package with functions to store
 License: GPL-2 + file LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.0.1
+RoxygenNote: 7.0.2
 Suggests: 
     testthat (>= 2.1.0)
 Depends: R (>= 3.6.0),

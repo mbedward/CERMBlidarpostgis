@@ -144,6 +144,11 @@ pg_sql <- function(dbsettings, command = NULL, file = NULL, quiet = TRUE) {
 #'   a character vector of either length 1 (same name for all LAS tiles) or
 #'   length equal to that of \code{las.paths}.
 #'
+#' @param default.epsgs Integer EPSG codes for each of the imported LAS tiles.
+#'   If \code{NULL} (default), EPSG codes will be read from the LAS headers.
+#'   Sometimes (e.g. class C1 LAS files) no coordinate reference sytem is
+#'   defined in the LAS header, so it is necessary to set the code manually.
+#'
 #' @param purpose Either \code{'general'} (default) for general purpose imagery
 #'   or \code{'postfire'} for specially flown, post-fire imagery. May be
 #'   abbreviated.
@@ -206,6 +211,7 @@ db_import_las <- function(dbsettings,
                           las.paths,
                           dem.paths = NULL,
                           mapnames = NULL,
+                          default.epsgs = NULL,
                           purpose = c("general", "postfire"),
                           check.overlap = TRUE,
                           buildings = FALSE,
@@ -281,9 +287,17 @@ db_import_las <- function(dbsettings,
         mapname <- mapnames[i]
       }
 
+      if (is.null(default.epsgs)) {
+        default.epsgcode <- NULL
+      } else if (length(default.epsgs) == 1) {
+        default.epsgcode <- default.epsgs
+      } else {
+        default.epsgcode <- default.epsgs[i]
+      }
+
       tryCatch({
         .do_import_las(dbsettings, las.file, dem.file,
-                       mapname, purpose,
+                       default.epsgcode, mapname, purpose,
                        check.overlap, buildings)
         imported[i] <- 1
 
@@ -318,6 +332,7 @@ db_import_las <- function(dbsettings,
 .do_import_las <- function(dbsettings,
                           las.path,
                           dem.path = NULL,
+                          default.epsgcode,
                           mapname,
                           purpose,
                           check.overlap,
@@ -339,20 +354,27 @@ db_import_las <- function(dbsettings,
 
   message("Importing LAS metadata")
   metadata.id <- db_load_tile_metadata(dbsettings,
-                                       las, las.path, mapname, purpose)
+                                       las = las,
+                                       filename = las.path,
+                                       mapname = mapname,
+                                       purpose = purpose,
+                                       default.epsg = default.epsgcode)
 
   message("Importing point counts for strata")
   db_load_stratum_counts(dbsettings,
                          las = las,
-                         metadata.id = metadata.id)
+                         metadata.id = metadata.id,
+                         default.epsg = default.epsgcode)
 
   if (buildings && (6 %in% las@data$Classification)) {
     message("Importing building points")
     db_load_building_points(dbsettings,
                             las = las,
-                            metadata.id = metadata.id)
+                            metadata.id = metadata.id,
+                            default.epsg = default.epsgcode)
   }
 }
+
 
 #' Check if one or more LAS files have been imported into the database
 #'
@@ -517,14 +539,24 @@ pg_load_raster <- function(dbsettings,
 #'
 db_load_tile_metadata <- function(dbsettings,
                                   las, filename, mapname,
-                                  purpose = c("general", "postfire")) {
+                                  purpose = c("general", "postfire"),
+                                  default.epsg = NULL) {
 
   .check_database_password()
 
   purpose <- match.arg(purpose)
 
   bounds <- CERMBlidar::get_las_bounds(las, "sf")
-  epsgcode <- sf::st_crs(bounds)$epsg
+  las.crs <- sf::st_crs(bounds)
+  if (is.na(las.crs)) {
+    if (is.null(default.epsg))
+      stop("Argument default.epsg is NULL and LAS file has no CRS defined")
+
+    epsgcode <- default.epsg
+  } else {
+    epsgcode <- las.crs$epsg
+  }
+
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
 
   tblname <- glue::glue("{schema}.{dbsettings$TABLE_METADATA}")
@@ -594,20 +626,31 @@ db_load_tile_metadata <- function(dbsettings,
 #'
 #' @export
 #'
-db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
+db_load_stratum_counts <- function(dbsettings,
+                                   las,
+                                   metadata.id,
+                                   default.epsg = NULL) {
 
   .check_database_password()
 
   counts <- CERMBlidar::get_stratum_counts(las, CERMBlidar::StrataCERMB)
 
-  schema <- .get_schema_for_epsg(dbsettings, lidR::epsg(las))
+  epsgcode <- lidR::epsg(las)
+  if (is.na(epsgcode) | epsgcode == 0) {
+    if (is.null(default.epsg))
+      stop("Argument default.epsg is NULL and LAS file has no CRS defined")
+
+    epsgcode <- default.epsg
+  }
+
+  schema <- .get_schema_for_epsg(dbsettings, epsgcode)
 
   # Load point counts for this tile into the temp table. If the table does
   # not exist it will be created, otherwise the new data will be appended
   # to the existing table.
   new.rids <- pg_load_raster(dbsettings,
                              counts,
-                             epsg = lidR::epsg(las),
+                             epsg = epsgcode,
                              tablename = glue::glue("{schema}.tmp_load"),
                              replace = FALSE,
                              tilew = ncol(counts),
@@ -725,11 +768,20 @@ db_load_stratum_counts <- function(dbsettings, las, metadata.id) {
 #' @export
 #'
 db_load_building_points <- function(dbsettings,
-                                    las, metadata.id) {
+                                    las,
+                                    metadata.id,
+                                    default.epsg = NULL) {
 
   .check_database_password()
 
   epsgcode <- lidR::epsg(las)
+  if (is.na(epsgcode) | epsgcode == 0) {
+    if (is.null(default.epsg))
+      stop("Argument default.epsg is NULL and LAS file has no CRS defined")
+
+    epsgcode <- default.epsg
+  }
+
   schema <- .get_schema_for_epsg(dbsettings, epsgcode)
 
   p <- .get_pool(dbsettings)

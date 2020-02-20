@@ -9,7 +9,8 @@ db_load_tile_metadata(
   las,
   filename,
   mapname,
-  purpose = c("general", "postfire")
+  purpose = c("general", "postfire"),
+  default.epsg = NULL
 )
 }
 \arguments{

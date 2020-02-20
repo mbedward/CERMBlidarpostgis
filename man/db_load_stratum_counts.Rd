@@ -4,7 +4,7 @@
 \alias{db_load_stratum_counts}
 \title{Rasterize and import points counts}
 \usage{
-db_load_stratum_counts(dbsettings, las, metadata.id)
+db_load_stratum_counts(dbsettings, las, metadata.id, default.epsg = NULL)
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned

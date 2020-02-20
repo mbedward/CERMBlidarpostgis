@@ -4,7 +4,7 @@
 \alias{db_load_building_points}
 \title{Import building points}
 \usage{
-db_load_building_points(dbsettings, las, metadata.id)
+db_load_building_points(dbsettings, las, metadata.id, default.epsg = NULL)
 }
 \description{
 Import building points
