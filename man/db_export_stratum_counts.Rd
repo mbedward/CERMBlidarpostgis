@@ -8,7 +8,7 @@ db_export_stratum_counts(
   dbsettings,
   geom,
   outpath,
-  purpose = c("general", "postfire"),
+  with.purpose = c("general", "postfire"),
   time.interval = NULL,
   default.epsg = NULL,
   overlap.action = c("latest", "earliest", "year", "fail"),
@@ -25,7 +25,7 @@ Y min,max.}
 
 \item{outpath}{A path and filename for the output GeoTIFF file.}
 
-\item{purpose}{Either \code{'general'} (default) to export rasters for
+\item{with.purpose}{Either \code{'general'} (default) to export rasters for
 general purpose imagery or \code{'postfire'} to export rasters for
 specially flown, post-fire imagery. May be abbreviated.}
 

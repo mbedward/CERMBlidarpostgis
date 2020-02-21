@@ -6,6 +6,8 @@
 \usage{
 db_get_las_bounds(
   dbsettings,
+  mapnames = NULL,
+  with.purpose = c("general", "postfire", "all"),
   file.pattern = NULL,
   capture.start = NULL,
   capture.end = NULL
@@ -15,8 +17,15 @@ db_get_las_bounds(
 \item{dbsettings}{A named list of database connection settings returned
 by \code{db_connect_postgis} or \code{db_create_postgis}.}
 
-\item{file.pattern}{A string pattern to match LAS source file names. Matching is done ignoring case.
-The pattern can be any of the following:
+\item{mapnames}{An optional list of map names. The default (\code{NULL}) is to
+include all map names. Case is ignored.}
+
+\item{with.purpose}{One of \code{'general'} (default) for general purpose
+imagery; \code{'postfire'} for specially flown, post-fire imagery; or
+\code{'all'} for all imagery. May be abbreviated.}
+
+\item{file.pattern}{A string pattern to match LAS source file names. Matching
+is done ignoring case. The pattern can be any of the following:
 \itemize{
   \item{A plain string - to return file names containing this string;}
   \item{An SQL string expression with \code{'\%'} wildcard - e.g. \code{'Bega\%5946\%';}}
@@ -24,11 +33,15 @@ The pattern can be any of the following:
 }
 The default (\code{NULL}) means match any file name.}
 
-\item{capture.start}{Beginning of time window for LAS images. Can be specified as a character string or a The default
-\code{NULL} means no start time constraint.}
+\item{capture.start}{Beginning of time window for LAS images. Can be
+specified as a character string or an object of class \code{Date},
+\code{POSIXct} or \code{POSIXlt}. The default \code{NULL} means no start
+time constraint.}
 
-\item{capture.end}{End of time window for LAS images. The default \code{NULL}
-means no end time constraint.}
+\item{capture.end}{End of time window for LAS images. Can be
+specified as a character string or an object of class \code{Date},
+\code{POSIXct} or \code{POSIXlt}. The default \code{NULL} means no end
+time constraint.}
 }
 \value{
 An \code{'sf'} spatial data frame containing the source file name,

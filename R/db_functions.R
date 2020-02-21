@@ -814,8 +814,15 @@ db_load_building_points <- function(dbsettings,
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
-#' @param file.pattern A string pattern to match LAS source file names. Matching is done ignoring case.
-#'   The pattern can be any of the following:
+#' @param mapnames An optional list of map names. The default (\code{NULL}) is to
+#'   include all map names. Case is ignored.
+#'
+#' @param with.purpose One of \code{'general'} (default) for general purpose
+#'   imagery; \code{'postfire'} for specially flown, post-fire imagery; or
+#'   \code{'all'} for all imagery. May be abbreviated.
+#'
+#' @param file.pattern A string pattern to match LAS source file names. Matching
+#'   is done ignoring case. The pattern can be any of the following:
 #'   \itemize{
 #'     \item{A plain string - to return file names containing this string;}
 #'     \item{An SQL string expression with \code{'\%'} wildcard - e.g. \code{'Bega\%5946\%';}}
@@ -824,11 +831,15 @@ db_load_building_points <- function(dbsettings,
 
 #'   The default (\code{NULL}) means match any file name.
 #'
-#' @param capture.start Beginning of time window for LAS images. Can be specified as a character string or a The default
-#'   \code{NULL} means no start time constraint.
+#' @param capture.start Beginning of time window for LAS images. Can be
+#'   specified as a character string or an object of class \code{Date},
+#'   \code{POSIXct} or \code{POSIXlt}. The default \code{NULL} means no start
+#'   time constraint.
 #'
-#' @param capture.end End of time window for LAS images. The default \code{NULL}
-#'   means no end time constraint.
+#' @param capture.end End of time window for LAS images. Can be
+#'   specified as a character string or an object of class \code{Date},
+#'   \code{POSIXct} or \code{POSIXlt}. The default \code{NULL} means no end
+#'   time constraint.
 #'
 #' @return An \code{'sf'} spatial data frame containing the source file name,
 #'   start and end capture dates and times, and bounding rectangle of the point
@@ -837,38 +848,54 @@ db_load_building_points <- function(dbsettings,
 #' @export
 #'
 db_get_las_bounds <- function(dbsettings,
+                              mapnames = NULL,
+                              with.purpose = c("general", "postfire", "all"),
                               file.pattern = NULL,
-                              capture.start = NULL, capture.end = NULL) {
+                              capture.start = NULL,
+                              capture.end = NULL) {
 
   file.pattern <- .first_elem(file.pattern)
   capture.start <- .first_elem(capture.start)
   capture.end <- .first_elem(capture.end)
 
-  where.cond <- NULL
-  if (!is.null(file.pattern) | !is.null(capture.start) | !is.null(capture.end)) {
-    if (!is.null(file.pattern)) {
-      if (stringr::str_detect(file.pattern, "%"))
-        where.cond <- c(where.cond, glue::glue("filename ILIKE '{file.pattern}'"))
-      else if (stringr::str_detect(file.pattern, "[\\*\\+\\[\\]\\^\\$]+"))
-        where.cond <- c(where.cond, glue::glue("filename ~* '{file.pattern}'"))
-      else
-        where.cond <- c(where.cond, glue::glue("filename ILIKE '%{file.pattern}%'"))
-    }
+  with.purpose <- match.arg(with.purpose)
 
-    if (!is.null(capture.start))
-      where.cond <- c(where.cond, glue::glue("capture_start >= '{.tformat(capture.start)}'"))
+  where.cond <- switch(
+    with.purpose,
+    general = "purpose = 'general'",
+    postfire = "purpose = 'postfire'",
+    all = NULL
+  )
 
-    if (!is.null(capture.end))
-      where.cond <- c(where.cond, glue::glue("capture_end <= '{.tformat(capture.end)}'"))
+  if (length(mapnames) > 0) {
+    mapnames <- paste(.single_quote(mapnames), collapse = ", ")
+    where.cond <- c(where.cond, glue::glue("mapname IN ({mapnames})"))
+  }
 
+  if (!is.null(file.pattern)) {
+    if (stringr::str_detect(file.pattern, "%"))
+      where.cond <- c(where.cond, glue::glue("filename ILIKE '{file.pattern}'"))
+    else if (stringr::str_detect(file.pattern, "[\\*\\+\\[\\]\\^\\$]+"))
+      where.cond <- c(where.cond, glue::glue("filename ~* '{file.pattern}'"))
+    else
+      where.cond <- c(where.cond, glue::glue("filename ILIKE '%{file.pattern}%'"))
+  }
+
+  if (!is.null(capture.start)) {
+    where.cond <- c(where.cond, glue::glue("capture_start >= '{.tformat(capture.start)}'"))
+  }
+
+  if (!is.null(capture.end)) {
+    where.cond <- c(where.cond, glue::glue("capture_end <= '{.tformat(capture.end)}'"))
+  }
+
+  if (!is.null(where.cond)) {
     where.cond <- paste("WHERE", paste(where.cond, collapse=" AND "))
-
   } else {
-    # No file name or time conditions
     where.cond <- ""
   }
 
-  command <- glue::glue("SELECT filename, capture_start, capture_end,
+  command <- glue::glue("SELECT mapname, filename, capture_start, capture_end,
                         ST_AsEWKT(bounds) AS geometry
                         FROM {dbsettings$TABLE_METADATA}
                         {where.cond};")
@@ -910,7 +937,7 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @param outpath A path and filename for the output GeoTIFF file.
 #'
-#' @param purpose Either \code{'general'} (default) to export rasters for
+#' @param with.purpose Either \code{'general'} (default) to export rasters for
 #'   general purpose imagery or \code{'postfire'} to export rasters for
 #'   specially flown, post-fire imagery. May be abbreviated.
 #'
@@ -960,12 +987,13 @@ db_export_stratum_counts <- function(
   dbsettings,
   geom,
   outpath,
-  purpose = c("general", "postfire"),
+  with.purpose = c("general", "postfire"),
   time.interval = NULL,
   default.epsg = NULL,
   overlap.action = c("latest", "earliest", "year", "fail"),
   overlap.yearorder = NULL) {
 
+  with.purpose <- match.arg(with.purpose)
   overlap.action <- match.arg(overlap.action)
 
   if (overlap.action == "year") {
@@ -1063,7 +1091,7 @@ db_export_stratum_counts <- function(
   command <- glue::glue("
     SELECT m.id as meta_id, m.capture_start, m.capture_end FROM
       {schema}.{dbsettings$TABLE_METADATA} AS m, tmp_features as f
-      WHERE ST_Intersects(m.bounds, f.feature)")
+      WHERE ST_Intersects(m.bounds, f.feature) AND purpose = '{with.purpose}';")
 
   tiles <- pool::dbGetQuery(con, command)
 
@@ -1215,21 +1243,38 @@ db_export_stratum_counts <- function(
 #' @param dbsettings A named list of database connection settings returned
 #'   by \code{db_connect_postgis} or \code{db_create_postgis}.
 #'
+#' @param with.purpose Defines the subset of data to summarize according to
+#'   image purpose. One of \code{'general'} (default) for general purpose
+#'   imagery; \code{'postfire'} for specially flown, post-fire imagery; or
+#'   \code{'all'} for all imagery. May be abbreviated.
+#'
 #' @return A data frame giving, for each combination of map zone (schema),
 #'   map name and year, the number of LAS tiles imported.
 #'
 #' @export
 #'
-db_summary <- function(dbsettings) {
+db_summary <- function(dbsettings, with.purpose = c("general", "postfire", "all")) {
   p <- .get_pool(dbsettings)
+
+  with.purpose <- match.arg(with.purpose)
+
+  where.clause <- switch(
+    with.purpose,
+    general = "WHERE purpose = 'general'",
+    postfire = "WHERE purpose = 'postfire'",
+    all = "")
 
   # Search all schemas
   res <- lapply(dbsettings$schema, function(schema) {
-    command <- glue::glue("select '{schema}' as zone, mapname, year, count(id) as ntiles from (
-                          select substring(filename, '^[^\\d]+') as mapname,
-                            extract (year from capture_start) as year,
-                            id from {schema}.{dbsettings$TABLE_METADATA}) as foo
-                          group by (mapname, year) order by (mapname, year);")
+    command <- glue::glue("
+      SELECT zone, mapname, year, purpose, count(id) AS ntiles FROM (
+        SELECT '{schema}' AS zone, mapname,
+          EXTRACT ('year' from capture_start) AS year,
+          purpose, id
+        FROM {schema}.{dbsettings$TABLE_METADATA}
+        {where.clause}) foo
+      GROUP BY (mapname, purpose, year)
+      ORDER BY (mapname, purpose, year);")
 
     pool::dbGetQuery(p, command)
   })
@@ -1271,7 +1316,7 @@ db_summary <- function(dbsettings) {
 #'
 #' # Using spatial self-join on the metadata table
 #' #
-#' query <- glue("select a.id as id1, b.id as id2, mapname, capture_start
+#' query <- glue("select a.id as id1, b.id as id2, mapname, purpose, capture_start
 #'               from mgazone56.las_metadata as a, mgazone56.las_metadata as b,
 #'               where mapname in ({values}) and
 #'               ST_Intersects(ST_Centroid(a.bounds), b.bounds) and
@@ -1390,19 +1435,28 @@ pg_table_exists <- function(dbsettings, tablename) {
 # Format a time stamp to include the time zone
 # (used by db_load_tile_metadata)
 .tformat <- function(timestamp, tz = "UTC") {
-  if (inherits(timestamp, "POSIXt")){
-    format(timestamp, usetz = TRUE)
+  if (inherits(timestamp, c("POSIXt", "Date"))) {
+    x <- timestamp
   } else if (inherits(timestamp, "character")) {
     x <- lubridate::parse_date_time(timestamp,
                                     orders = c("ymd", "ymd H", "ymd HM", "ymd HMS"),
                                     tz=tz)
-    format(timestamp, usetz = TRUE)
   } else {
-    stop("Argument timestamp should be POSIXt or character")
+    stop("Argument timestamp should be POSIXt, Date, character")
   }
+
+  format(timestamp, format = "%Y-%m-%d %H:%M:%S", usetz = TRUE)
 }
 
 
+# Put single quotes around strings
+.single_quote <- function(x) {
+  if (length(x) > 0) x <- paste0("'", x, "'")
+  x
+}
+
+
+# Get first elment from a vector
 .first_elem <- function(x, msg = TRUE) {
   if (is.null(x)) {
     NULL

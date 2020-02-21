@@ -37,7 +37,7 @@ values <- paste(mapnames, collapse = ", ")
 
 # Using spatial self-join on the metadata table
 #
-query <- glue("select a.id as id1, b.id as id2, mapname, capture_start
+query <- glue("select a.id as id1, b.id as id2, mapname, purpose, capture_start
               from mgazone56.las_metadata as a, mgazone56.las_metadata as b,
               where mapname in ({values}) and
               ST_Intersects(ST_Centroid(a.bounds), b.bounds) and

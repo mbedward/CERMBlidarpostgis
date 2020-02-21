@@ -4,11 +4,16 @@
 \alias{db_summary}
 \title{Summarize number of LAS tiles by map name}
 \usage{
-db_summary(dbsettings)
+db_summary(dbsettings, with.purpose = c("general", "postfire", "all"))
 }
 \arguments{
 \item{dbsettings}{A named list of database connection settings returned
 by \code{db_connect_postgis} or \code{db_create_postgis}.}
+
+\item{with.purpose}{Defines the subset of data to summarize according to
+image purpose. One of \code{'general'} (default) for general purpose
+imagery; \code{'postfire'} for specially flown, post-fire imagery; or
+\code{'all'} for all imagery. May be abbreviated.}
 }
 \value{
 A data frame giving, for each combination of map zone (schema),
