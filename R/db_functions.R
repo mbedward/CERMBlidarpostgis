@@ -1267,14 +1267,13 @@ db_summary <- function(dbsettings, with.purpose = c("general", "postfire", "all"
   # Search all schemas
   res <- lapply(dbsettings$schema, function(schema) {
     command <- glue::glue("
-      SELECT zone, mapname, year, purpose, count(id) AS ntiles FROM (
-        SELECT '{schema}' AS zone, mapname,
-          EXTRACT ('year' from capture_start) AS year,
-          purpose, id
+      SELECT purpose, zone, mapname, year, count(id) AS ntiles FROM (
+        SELECT id, purpose, '{schema}' AS zone, mapname,
+          EXTRACT ('year' from capture_start) AS year
         FROM {schema}.{dbsettings$TABLE_METADATA}
         {where.clause}) foo
-      GROUP BY (mapname, purpose, year)
-      ORDER BY (mapname, purpose, year);")
+      GROUP BY (purpose, zone, mapname, year)
+      ORDER BY (purpose, zone, mapname, year);")
 
     pool::dbGetQuery(p, command)
   })
