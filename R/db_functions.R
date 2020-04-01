@@ -1231,7 +1231,7 @@ db_export_stratum_counts <- function(
   tiles <- sf::st_read(p, query = command)
 
   tiles <- tiles %>%
-    dplyr::mutate(itime <- as.integer( format(capture_start, "%Y%m%d") ) ) %>%
+    dplyr::mutate(itime = as.integer( format(capture_start, "%Y%m%d") ) ) %>%
     dplyr::select(-capture_start)
 
   rdates <- fasterize::fasterize(tiles, rcounts[[1]], field = "itime", fun = "min")
