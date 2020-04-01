@@ -1109,7 +1109,7 @@ db_export_stratum_counts <- function(
       ii <- lubridate::year(tiles$capture_start) %in% time.interval |
         lubridate::year(tiles$capture_end) %in% time.interval
     }
-    if (time.interval.type == "interval") {
+    else if (time.interval.type == "interval") {
       ii <- lubridate::`%within%`(tiles$capture_start, time.interval) |
         lubridate::`%within%`(tiles$capture_end, time.interval)
     }
@@ -1210,6 +1210,7 @@ db_export_stratum_counts <- function(
 
   pool::dbExecute(con, command)
   pool::dbCommit(con)
+  pool::poolReturn(con)
 
   if (file.exists(outpath)) {
     rcounts <- raster::stack(outpath)
@@ -1221,17 +1222,21 @@ db_export_stratum_counts <- function(
 
   # Create raster of tile scan times
   command <- glue::glue("
-    SELECT id as meta_id, capture_start, bounds
+    SELECT id as meta_id, capture_start, bounds as geometry
       FROM {schema}.{dbsettings$TABLE_METADATA}
       WHERE id IN ({ids.txt});
   ")
 
-  tiles <- sf::st_read(con, query = command)
-  tiles$i_time <- as.integer( format(tiles$capture_start, "%Y%m%d") )
+  # Note - using 'p' (pool object) rather than the returned 'con'
+  tiles <- sf::st_read(p, query = command)
 
-  rdates <- fasterize::fasterize(tiles, rcounts, field = "i_time", fun = "min")
+  tiles <- tiles %>%
+    dplyr::mutate(itime <- as.integer( format(capture_start, "%Y%m%d") ) ) %>%
+    dplyr::select(-capture_start)
 
-  list(counts = rcounts, dates = rdates)
+  rdates <- fasterize::fasterize(tiles, rcounts[[1]], field = "itime", fun = "min")
+
+  list(counts = rcounts, dates = tiles, rdates = rdates)
 }
 
 
