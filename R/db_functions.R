@@ -1191,6 +1191,8 @@ db_export_stratum_counts <- function(
   #
   ids.txt <- paste(tiles$meta_id, collapse = ", ")
 
+  outpath <- normalizePath(outpath, winslash = "/", mustWork = FALSE)
+
   pool::dbBegin(con)
   command <- glue::glue("
     CREATE TEMPORARY TABLE tmp_export_rast AS
@@ -1216,7 +1218,6 @@ db_export_stratum_counts <- function(
     rcounts <- raster::stack(outpath)
     names(rcounts) <- CERMBlidar::StrataCERMB$name
   } else {
-    pool::poolReturn(con)
     stop("GeoTIFF file for exported point counts could not be created")
   }
 
