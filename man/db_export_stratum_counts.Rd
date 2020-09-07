@@ -2,80 +2,10 @@
 % Please edit documentation in R/db_functions.R
 \name{db_export_stratum_counts}
 \alias{db_export_stratum_counts}
-\title{Export point count rasters that intersect query features}
+\title{Export raster point count data for a selected tile.}
 \usage{
-db_export_stratum_counts(
-  dbsettings,
-  geom,
-  outpath,
-  with.purpose = c("general", "postfire"),
-  time.interval = NULL,
-  default.epsg = NULL,
-  overlap.action = c("latest", "earliest", "year", "fail"),
-  overlap.yearorder = NULL
-)
-}
-\arguments{
-\item{dbsettings}{A named list of database connection settings returned
-by \code{db_connect_postgis} or \code{db_create_postgis}.}
-
-\item{geom}{The feature(s) to intersect. Can also be an \code{Extent} object
-or a 2x2 matrix where the first row is X min,max and the second row is
-Y min,max.}
-
-\item{outpath}{A path and filename for the output GeoTIFF file.}
-
-\item{with.purpose}{Either \code{'general'} (default) to export rasters for
-general purpose imagery or \code{'postfire'} to export rasters for
-specially flown, post-fire imagery. May be abbreviated.}
-
-\item{time.interval}{If provided, only export data for rasters where the
-scan time (capture_start and capture_end fields) overlap the given interval.
-Can be provided as either a vector of one or more years as four-digit integers,
-or a \code{lubridate::interval} object.}
-
-\item{default.epsg}{EPSG code to assume for the query feature(s). Ignored if
-the features are \code{sf} or \code{raster::Extent} objects with a coordinate
-reference system defined.}
-
-\item{overlap.action}{A character string specifying how to choose between
-overlapping tiles. Two tiles are considered to be overlapping if the
-centroid of the first tile lies within the bounds of the second tile. In
-such cases, only one of the tiles should be exported, otherwise the UNION
-SUM operation that is applied to merge edge pixels of adjacent rasters will
-inadvertently sum the values of the overlapping tiles. Options are:
-\code{'latest'} (default) to choose the most recent tile; \code{'earliest'}
-to choose the earliest tile; \code{'year'} to apply a preference order of
-years specified via the \code{overlap.yearorder} parameter; \code{'fail'}
-to abort the export process and issue an error message if overlapping tiles
-are detected.}
-
-\item{overlap.yearorder}{A vector of one or more four digit year numbers
-specifying the preference order to apply when overlapping LAS tiles are
-detected. Only used if parameter \code{overlap.action} is set to
-\code{'year'}, The first element in the vector is the most preferred.
-Overlapping tiles for years that are not specified in this vector will not
-be exported.}
-}
-\value{
-A list with the following elments:
-  \describe{
-    \item{counts}{A RasterStack linked to the GeoTIFF file exported by the
-      function, with layer names corresonding to those defined in the
-      StrataCERMB lookup table from the CERMBlidar package.}
-    \item{dates}{A RasterLayer having the same row and column dimensions as
-      the counts raster, where cell values are LiDAR capture dates coded as
-      eight digit integers (yyyymmdd). Cells located within the common edge
-      of adjacent tiles with different capture dates are assigned the date
-      of the earlier tile.}
-  }
+db_export_stratum_counts(dbsettings, epsg, meta_id, outpath)
 }
 \description{
-This function takes a set of features (points, lines, polygons or an extent
-in the form of a matrix or raster Extent object), identifies the raster tiles
-of point count data that the features intersect with, and exports these to a
-GeoTIFF file. Optionally, the data to export can be restricted to a specified
-time period. If any parts of the query area are covered by LiDAR data for two
-or more dates, the data to export is chosen based on the
-\code{overlap.action} and \code{overlap.yearorder} parameters.
+Export raster point count data for a selected tile.
 }

@@ -983,7 +983,7 @@ db_get_las_bounds <- function(dbsettings,
 #'
 #' @export
 #'
-db_export_stratum_counts <- function(
+db_query_stratum_counts <- function(
   dbsettings,
   geom,
   outpath,
@@ -1238,6 +1238,66 @@ db_export_stratum_counts <- function(
   rdates <- fasterize::fasterize(tiles, rcounts[[1]], field = "itime", fun = "min")
 
   list(counts = rcounts, dates = tiles, rdates = rdates)
+}
+
+
+#' Export raster point count data for a selected tile.
+#'
+#' Export a raster stack of point count data for a specified tile.
+#'
+#' @param dbsettings A named list of database connection settings returned
+#'   by \code{db_connect_postgis} or \code{db_create_postgis}.
+#'
+#' @param epsg Integer EPSG code for the MGA map zone within which the tile
+#'   lies.
+#'
+#' @param meta_id Integer identifier for the tile. This must be a value present
+#'   in the \code{las_metadata} table (as field \code{id}) with corresponding
+#'   raster record(s) in the \code{point_counts} table.
+#'
+#' @outpath Path and file name for the output raster stack.
+#'
+#' @export
+#'
+db_export_stratum_counts <- function(dbsettings,
+                                     epsg,
+                                     meta_id,
+                                     outpath) {
+
+  schema <- .get_schema_for_epsg(dbsettings, epsg)
+  outpath <- normalizePath(outpath, winslash = "/", mustWork = FALSE)
+
+  command <- glue::glue("
+    CREATE TEMPORARY TABLE tmp_export_rast AS
+      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast, 'SUM'), 'GTiff')) AS loid
+      FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
+      WHERE meta_id = {meta_id};
+    --------
+    SELECT lo_export(loid, '{outpath}')
+      FROM tmp_export_rast;
+    --------
+    SELECT lo_unlink(loid)
+      FROM tmp_export_rast;
+    --------
+    DROP TABLE tmp_export_rast;
+  ")
+
+  POOL <- .get_pool(dbsettings)
+
+  pool::poolWithTransaction(POOL, function(con) {
+    pool::dbExecute(con, command)
+  })
+
+  if (file.exists(outpath)) {
+    rcounts <- raster::stack(outpath)
+    names(rcounts) <- CERMBlidar::StrataCERMB$name
+
+    # Return raster object
+    rcounts
+
+  } else {
+    stop("GeoTIFF file for exported point counts could not be created")
+  }
 }
 
 
