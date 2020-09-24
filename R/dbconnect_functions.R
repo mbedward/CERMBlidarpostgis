@@ -240,9 +240,9 @@ db_create_postgis <- function(dbname,
 #' @export
 #'
 db_connect_postgis <- function(dbname,
-                               host = "localhost",
+                               host = NULL,
                                port = 5432,
-                               username = "postgres",
+                               username = NULL,
                                password = NULL,
                                pgpath = "c:/Program Files/PostgreSQL/11/bin") {
 
@@ -357,7 +357,21 @@ db_disconnect_postgis <- function(dbsettings) {
 
 .check_database_password <- function(password = NULL) {
   if (is.null(password)) {
+    # Check for pgpass.conf file
+    if (tolower(Sys.info()["sysname"]) == "windows") {
+      # On Windows, look for pgpass.conf and, if found,
+      # ASSUME that the password is set there
+      path <- file.path(Sys.getenv("APPDATA"), "postgresql", "pgpass.conf")
+      if (file.exists(path)) return(NULL)
+    } else {
+      # TODO - code for *nix type systems
+      stop("Bummer - password code still needs to be written for non-Windows OS")
+    }
+
+    # If we get here, we are on Windows and the pgpass.conf file
+    # was not found
     password <- Sys.getenv("PGPASSWORD", unset = NA)
+
     if (is.na(password)) {
       stop("Database password not set. Provide it as an argument\n",
            "or set the environment variable PGPASSWORD")

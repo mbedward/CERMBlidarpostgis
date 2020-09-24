@@ -1255,7 +1255,7 @@ db_query_stratum_counts <- function(
 #'   in the \code{las_metadata} table (as field \code{id}) with corresponding
 #'   raster record(s) in the \code{point_counts} table.
 #'
-#' @outpath Path and file name for the output raster stack.
+#' @param outpath Path and file name for the output raster stack.
 #'
 #' @export
 #'
@@ -1267,26 +1267,25 @@ db_export_stratum_counts <- function(dbsettings,
   schema <- .get_schema_for_epsg(dbsettings, epsg)
   outpath <- normalizePath(outpath, winslash = "/", mustWork = FALSE)
 
-  command <- glue::glue("
-    CREATE TEMPORARY TABLE tmp_export_rast AS
-      SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast, 'SUM'), 'GTiff')) AS loid
-      FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
-      WHERE meta_id = {meta_id};
-    --------
-    SELECT lo_export(loid, '{outpath}')
-      FROM tmp_export_rast;
-    --------
-    SELECT lo_unlink(loid)
-      FROM tmp_export_rast;
-    --------
-    DROP TABLE tmp_export_rast;
-  ")
-
   POOL <- .get_pool(dbsettings)
 
-  pool::poolWithTransaction(POOL, function(con) {
-    pool::dbExecute(con, command)
-  })
+  # Export the raster as a GeoTIFF to the Postgresql large object buffer
+  command <- glue::glue("
+    SELECT lo_from_bytea(0, ST_AsGDALRaster(ST_Union(rast, 'SUM'), 'GTiff')) AS loid
+    FROM {schema}.{dbsettings$TABLE_COUNTS_LAS}
+    WHERE meta_id = {meta_id};")
+
+  loid <- pool::dbGetQuery(POOL, command)$loid[1]
+
+  # Use psgql to export the GeoTIFF to the client
+  args <- glue::glue("-d {dbsettings$DBNAME} -U {dbsettings$USERNAME} \\
+                      -c \"\\lo_export {loid} '{outpath}'\"")
+
+  out <- system2(command = dbsettings$PSQL, args = args, stdout = TRUE)
+
+  # Delete the large object
+  command <- glue::glue("SELECT lo_unlink({loid});")
+  pool::dbExecute(POOL, command)
 
   if (file.exists(outpath)) {
     rcounts <- raster::stack(outpath)

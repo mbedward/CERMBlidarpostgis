@@ -6,9 +6,9 @@
 \usage{
 db_connect_postgis(
   dbname,
-  host = "localhost",
+  host = NULL,
   port = 5432,
-  username = "postgres",
+  username = NULL,
   password = NULL,
   pgpath = "c:/Program Files/PostgreSQL/11/bin"
 )

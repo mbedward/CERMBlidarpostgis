@@ -6,6 +6,19 @@
 \usage{
 db_export_stratum_counts(dbsettings, epsg, meta_id, outpath)
 }
+\arguments{
+\item{dbsettings}{A named list of database connection settings returned
+by \code{db_connect_postgis} or \code{db_create_postgis}.}
+
+\item{epsg}{Integer EPSG code for the MGA map zone within which the tile
+lies.}
+
+\item{meta_id}{Integer identifier for the tile. This must be a value present
+in the \code{las_metadata} table (as field \code{id}) with corresponding
+raster record(s) in the \code{point_counts} table.}
+
+\item{outpath}{Path and file name for the output raster stack.}
+}
 \description{
-Export raster point count data for a selected tile.
+Export a raster stack of point count data for a specified tile.
 }
